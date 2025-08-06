@@ -1,0 +1,15 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Screenshots from selenium
+*.png
+
+# OS
+.DS_Store
