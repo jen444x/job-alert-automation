@@ -53,16 +53,16 @@ def check_for_jobs():
         service = Service("/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
     
-        # Go to your SmartFind Express login URL
-        driver.get("https://bakersfield.eschoolsolutions.com/logOnInitAction.do")
+        # Go to your login URL
+        driver.get(os.getenv("PORTAL_URL"))
 
         driver.save_screenshot("after_load.png")
 
         # Login
         time.sleep(2) # Wait 2 sec. to give the browser time to load all HTML + JS
         # Fill in form to login
-        driver.find_element(By.ID, "userId").send_keys(USERNAME)
-        driver.find_element(By.ID, "userPin").send_keys(PASSWORD + Keys.RETURN)
+        driver.find_element(By.ID, os.getenv("USERNAME_FIELD", "userId")).send_keys(USERNAME)
+        driver.find_element(By.ID, os.getenv("PASSWORD_FIELD", "userPin")).send_keys(PASSWORD + Keys.RETURN)
 
         # Wait up to 30 seconds for dashboard to load
         WebDriverWait(driver, 30).until(
@@ -82,7 +82,7 @@ def check_for_jobs():
         soup = BeautifulSoup(html, 'html.parser')   # Better for searching and reading
 
         # Find the job table
-        job_table = soup.find("table", id="parent-table-desktop-available")
+        job_table = soup.find("table", id=os.getenv("JOB_TABLE_ID", "parent-table-desktop-available"))
 
         print(job_table.get_text(separator=" | ", strip=True))
 
