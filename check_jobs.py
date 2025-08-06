@@ -18,7 +18,7 @@ load_dotenv() # Reads your .env file and makes the values available via os.geten
 def send_text_notification(body):
     payload = {
         "token": os.getenv("PUSHOVER_API_TOKEN"),
-        "user": os.getenv("KIM_PUSHOVER_USER"),
+        "user": os.getenv("NOTIFICATION_USER_KEY"),
         "message": body,
     }
 
@@ -39,8 +39,8 @@ def check_for_jobs():
 
     try:
         # Login credentials
-        USERNAME = os.getenv("SFE_USERNAME")
-        PASSWORD = os.getenv("SFE_PASSWORD")
+        USERNAME = os.getenv("PORTAL_USERNAME")
+        PASSWORD = os.getenv("PORTAL_PASSWORD")
 
         # Selenium config
         options = Options() # Creates an empty ChromeOptions object. This will store settings for Selenium
