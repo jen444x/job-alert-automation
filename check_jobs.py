@@ -10,24 +10,31 @@ import os
 import time
 from bs4 import BeautifulSoup
 import requests
+import random
 
 # Load credentials
 load_dotenv() # Reads your .env file and makes the values available via os.getenv()
 
+RECIPIENTS = [
+    os.getenv("USER_KEY1"),    
+    # os.getenv("USER_KEY2")    
+]
+
 # Twilio Notification
 def send_text_notification(body):
-    payload = {
-        "token": os.getenv("PUSHOVER_API_TOKEN"),
-        "user": os.getenv("NOTIFICATION_USER_KEY"),
-        "message": body,
-    }
+    for recipient in RECIPIENTS:
+        payload = {
+            "token": os.getenv("PUSHOVER_API_TOKEN"),
+            "user": recipient,
+            "message": body,
+        }
 
-    try:
-        response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
-        response.raise_for_status()
-        print("Sent Pushover alert")
-    except Exception as e:
-        print("Failed to send Pushover alert:", e)
+        try:
+            response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
+            response.raise_for_status()
+            print(f"Sent Pushover alert to {recipient}")
+        except Exception as e:
+            print(f"Failed to send Pushover alert to {recipient}:", e)
 
 # Global memory to avoid duplicate texts
 # Remembers the most recent job alert you sent, So you don’t keep texting the same job every 3 minutes
@@ -66,20 +73,30 @@ def check_for_jobs():
 
         # Wait up to 30 seconds for dashboard to load
         WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.ID, "job-search-tab"))  
+            EC.presence_of_element_located((By.ID, "job-search"))  
         )
 
         # Save screenshot so we can verify login
-        driver.save_screenshot("login_check.png")
+        # driver.save_screenshot("login_check.png")
+
+        try:
+            # Wait for and click the Available Jobs tab
+            available_tab = WebDriverWait(driver, 15).until(
+                # wait for class within available jobs section
+                EC.element_to_be_clickable((By.ID, "available-tab"))
+            )
+            available_tab.click()
+        except Exception as e:
+            print(f"Error clicking tab: {e}")     
+
+        # Wait a bit for content to load
+        time.sleep(5)       
         
-        # Wait until the job table is present
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.ID, "parent-table-desktop-available"))
-        )
+        # driver.save_screenshot("before_scraping.png")
 
         # Get the full page content
         html = driver.page_source
-        soup = BeautifulSoup(html, 'html.parser')   # Better for searching and reading
+        soup = BeautifulSoup(html, 'html.parser')   # Better for searching and reading          
 
         # Find the job table
         job_table = soup.find("table", id=os.getenv("JOB_TABLE_ID", "parent-table-desktop-available"))
@@ -95,10 +112,23 @@ def check_for_jobs():
             
             # Double check there's no jobs
             no_jobs_msg = soup.find("div", class_="pds-message-info")
+
             if no_jobs_msg and "no jobs available" in no_jobs_msg.text.lower():
                 print("No jobs available (confirmed from message box).")
             else:
-                print("Error: There are jobs available.")
+                # try to get new html and check 
+                time.sleep(3)    
+
+                # Get fresh HTML
+                html1 = driver.page_source
+                soup1 = BeautifulSoup(html, 'html.parser')
+
+                no_jobs_msg = soup1.find("div", class_="pds-message-info")
+                
+                if no_jobs_msg and "no jobs available" in no_jobs_msg.text.lower():
+                    print("No jobs available (confirmed from message box).")
+                else:
+                    print("Error: There are jobs available.")
         else:
             new_jobs = []
 
@@ -129,5 +159,7 @@ def check_for_jobs():
 
 while True:
     check_for_jobs()
-    print("Waiting 3 minutes...\n")
+    print("Waiting 2.3-3.5 minutes...\n")
+    # wait_time = random.randint(150,210) # 2.5-3.5 minutes
+    wait_time = random.randint(210,270) # 3.5-4.5 minutes
     time.sleep(180)

@@ -68,7 +68,8 @@ The system follows a modular design pattern:
    PORTAL_PASSWORD=your_portal_password
    PORTAL_URL=https://your-job-portal.com/login
    PUSHOVER_API_TOKEN=your_pushover_api_token
-   NOTIFICATION_USER_KEY=recipient_pushover_key
+   USER_KEY1=your_first_pushover_user_key
+   USER_KEY2=your_second_pushover_user_key
    USERNAME_FIELD=userId
    PASSWORD_FIELD=userPin
    JOB_TABLE_ID=job-table-id
