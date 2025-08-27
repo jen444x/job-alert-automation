@@ -37,14 +37,14 @@ def send_text_notification(body):
             print(f"Failed to send Pushover alert to {recipient}:", e)
 
 # Global memory to avoid duplicate texts
-# Remembers the most recent job alert you sent, So you don’t keep texting the same job every 3 minutes
 last_job_seen = None
+driver = None
 
 def check_for_jobs():
-    global last_job_seen # Means we can update the outer variable
-    driver = None   # Will control the browser
+    global last_job_seen, driver # Means we can update the outer variable
 
     try:
+        print("Logging in\n")
         # Login credentials
         USERNAME = os.getenv("PORTAL_USERNAME")
         PASSWORD = os.getenv("PORTAL_PASSWORD")
@@ -55,21 +55,28 @@ def check_for_jobs():
         options.add_argument("--headless")  # Runs the browser without a GUI window
         options.add_argument("--no-sandbox") # Disables the browser’s “sandbox” security feature
         options.add_argument("--disable-dev-shm-usage") # Prevents Chrome from using /dev/shm (shared memory)
+        print("configed selenium\n")
 
         # Set up WebDriver
         service = Service("/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
-    
+        print("Set up webdrive\n")
+
         # Go to your login URL
         driver.get(os.getenv("PORTAL_URL"))
+        print("Went to login URL\n")
+        # driver.save_screenshot("after_load.png")
 
-        driver.save_screenshot("after_load.png")
+        ## Login
+        # Wait for login prompt
+        username_field = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, os.getenv("USERNAME_FIELD", "userId")))
+        )
+        password_field = driver.find_element(By.ID, os.getenv("PASSWORD_FIELD", "userPin"))
 
-        # Login
-        time.sleep(2) # Wait 2 sec. to give the browser time to load all HTML + JS
         # Fill in form to login
-        driver.find_element(By.ID, os.getenv("USERNAME_FIELD", "userId")).send_keys(USERNAME)
-        driver.find_element(By.ID, os.getenv("PASSWORD_FIELD", "userPin")).send_keys(PASSWORD + Keys.RETURN)
+        username_field.send_keys(USERNAME)
+        password_field.send_keys(PASSWORD + Keys.RETURN)
 
         # Wait up to 30 seconds for dashboard to load
         WebDriverWait(driver, 30).until(
@@ -157,9 +164,20 @@ def check_for_jobs():
         if driver:
             driver.quit()
 
-while True:
-    check_for_jobs()
-    print("Waiting 2.3-3.5 minutes...\n")
-    # wait_time = random.randint(150,210) # 2.5-3.5 minutes
-    wait_time = random.randint(210,270) # 3.5-4.5 minutes
-    time.sleep(180)
+if __name__ == "__main__":
+    try:
+        while True:
+            check_for_jobs()
+            print("Waiting 2.3-3.5 minutes...\n")
+            # wait_time = random.randint(150,210) # 2.5-3.5 minutes
+            wait_time = random.randint(210,270) # 3.5-4.5 minutes
+            time.sleep(wait_time)
+    except KeyboardInterrupt:
+        print("🛑 Stopping bot...")
+    except Exception as e:
+        print(f"💥 Fatal error: {e}")
+        send_text_notification(f"💥 Job bot crashed: {e}")
+    finally:
+        if driver:
+            driver.quit()
+            print("🧹 Cleaned up browser on exit")
