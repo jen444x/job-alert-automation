@@ -42,6 +42,20 @@ def send_text_notification(body):
         except Exception as e:
             print(f"Failed to send Pushover alert to {recipient}:", e)
 
+def reset():
+    global driver
+        
+    # Clean up current driver
+    if driver:
+        driver.quit()
+        driver = None
+    
+    # Wait before retrying
+    print("Resetting everything, waiting 5 minutes...")
+    time.sleep(300)  # 5 minutes
+
+    
+
 def set_up():
     global driver
 
@@ -83,7 +97,17 @@ def login():
     # Save screenshot so we can verify login
     # driver.save_screenshot("login_check.png")
 
-def find_job_table():
+    # Make sure were logged in 
+    try:
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "job-search"))
+        )
+    except Exception as e:
+        print(f"Error logging in: {e}")  
+        return -1
+    
+
+def get_jobs():
     global driver 
 
     # Wait for and click the Available Jobs tab
@@ -94,6 +118,7 @@ def find_job_table():
         available_tab.click()
     except Exception as e:
         print(f"Error clicking tab: {e}")  
+        return -1
         
     # Wait for job table 
     try: 
@@ -102,93 +127,111 @@ def find_job_table():
         )
     except Exception as e:
         print(f"Error finding job table: {e}")    
+        return -1
 
     # Get full page content 
-    html = driver.page_source
-    soup = BeautifulSoup(html, 'html.parser')   # Better for searching and reading 
+    try:
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+    except Exception as e:
+        print(f"Failed to get/parse page: {e}")
+        return -1
 
-    # return table
+    # Get table
     job_table = soup.find("table", id=os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")) 
-    return job_table
 
-
-
-def check_for_jobs(job_table):
-    global recent_jobs, driver # Means we can update the outer variable
-
-    print(job_table.get_text(separator=" | ", strip=True))
+    # print(job_table.get_text(separator=" | ", strip=True))
 
     # Get all table rows except the header
-    rows = job_table.find_all("tr")[1:]  # skip the header
+    # rows = job_table.find_all("tr")[1:]  # skip the header
+    rows = job_table.find_all("tr")
+    jobs = []
+    
     if rows:
-        current_jobs = set()
-        new_jobs = []
-
         for row in rows:
+            print(row)
             cells = row.find_all("td")
             details = [cell.get_text(strip=True) for cell in cells]
-            job_text = " | ".join(details)
-            print("Found job:", job_text)
-
-            current_jobs.add(job_text)
-            if job_text not in recent_jobs:
-                new_jobs.append(job_text)
-            else:
-                print("Job already seen.")
-                message = f"Job is still available:\n\n{job_text}"
-                send_text_notification(message)
-
-        # Update memory
-        recent_jobs = current_jobs
-
-        if new_jobs:
-            message = "New job(s) posted:\n\n" + "\n\n".join(new_jobs)
-            send_text_notification(message)
-        else:
-            print("No new jobs found. Skipping alert.")
-    else:
-        print(f"No jobs available at this time (empty table: {rows})")
-
-        # Wait to see if a "no jobs available" message appears
-        try:
-            WebDriverWait(driver, 30).until(
-                EC.text_to_be_present_in_element(
-                    (By.CLASS_NAME, "pds-message-info"), 
-                    "no jobs available"
-                )
-            )
-            print("No jobs available (confirmed from message box).")
-        except TimeoutException:
-            message = "Error: Empty table but no 'no jobs available' message found."
-            print(message)
-            send_text_notification(message)
-
-
+            job = " | ".join(details)
+            jobs.append(job)
+    
+    return jobs
 
 if __name__ == "__main__":
-    table_not_found_count = 0
     try:
-        while True:
-            set_up()
-            login()
+        error_count = 0
+        recent_jobs = set()
 
-            job_table = find_job_table()
-            if job_table:
-                # reset counter
-                table_not_found_count = 0
-                check_for_jobs(job_table)
-            else:
-                table_not_found_count += 1
-                print("Couldn't find table, skipping this cycle")
-                
-                if table_not_found_count >= 3:
-                    send_text_notification("Bot failed 3 times in a row, shutting down")
-                    sys.exit("Could not find table")
+        while error_count < 3:
+            set_up()
+
+            if login() == -1:
+                error_count += 1
+
+                # wait and try again
+                reset()
+                continue
             
-            print("Waiting 2.3-3.5 minutes...\n")
-            # wait_time = random.randint(150,210) # 2.5-3.5 minutes
-            wait_time = random.randint(210,270) # 3.5-4.5 minutes
-            time.sleep(wait_time)
+            # reset error counter
+            error_count = 0
+
+            jobs = get_jobs()
+
+            if jobs == -1:
+                error_count += 1
+
+                # wait and try again
+                reset()
+                continue
+
+            # reset error counter
+            error_count = 0
+            if jobs == []:
+                # Double check if no jobs are found 
+                print(f"No jobs available at this time (empty table: {jobs})")
+
+                # Wait to see if a "no jobs available" message appears
+                try:
+                    WebDriverWait(driver, 30).until(
+                        EC.text_to_be_present_in_element(
+                            (By.CLASS_NAME, "pds-message-info"), 
+                            "no jobs available"
+                        )
+                    )
+                    print("No jobs available (confirmed from message box).")
+
+                    # Wait and try again
+                    reset()
+                    continue
+                except TimeoutException:
+                    message = "Error: Empty table but no 'no jobs available' message found."
+                    print(message)
+                    send_text_notification(message)
+            
+            # Check if there's new jobs
+            new_jobs = []
+            for job in jobs:
+                if job not in recent_jobs:
+                    new_jobs.append(job)
+                else:    
+                    # For debugging, remove later
+                    print("Job already seen.")
+                    message = f"Job is still available:\n\n{job}"
+                    send_text_notification(message)
+
+            if new_jobs:
+                message = "New job(s) posted:\n\n" + "\n\n".join(new_jobs)
+                print(message)
+                send_text_notification(message)
+            else:
+                print(f"No new jobs available at this time (empty table)")
+                
+
+            # Update memory
+            recent_jobs = set(jobs)  # convert list to set
+
+            reset()
+        sys.exit(1) # error 
     except KeyboardInterrupt:
         print("🛑 Stopping bot...")
     except Exception as e:
