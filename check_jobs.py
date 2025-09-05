@@ -11,6 +11,18 @@ import os
 import time
 from bs4 import BeautifulSoup
 import requests
+import random
+import datetime
+import pytz
+
+# Initialize driver variable
+driver = None  
+
+# Load credentials
+load_dotenv() 
+
+# Timezone configuration
+TIMEZONE = os.getenv("TIMEZONE", "America/Los_Angeles")
 
 """
 Exception classes
@@ -88,11 +100,6 @@ def retry_on_failure(action_func, max_retries=2, delay=15, on_failure="refresh")
                 destroy_driver()  # Clean up broken driver so it can be recreated
 
             time.sleep(delay)
-
-driver = None  # Initialize driver variable
-
-# Load credentials
-load_dotenv() # Reads your .env file and makes the values available via os.getenv()
 
 RECIPIENTS = [
     os.getenv("USER_KEY1"),    
@@ -329,6 +336,38 @@ def prepare_session():
     if not logged_in():
         login()
 
+def get_wait_time():
+
+    now = datetime.datetime.now(TIMEZONE)
+    now = now.hour
+    
+    print(f"Local time: {now.strftime('%I:%M %p')} (Hour: {now})")
+    
+    # Late night (11 PM to 5 AM) - sleep mode
+    if now >= 23 or now < 5:
+        print("Sleep mode: checking every 3-3.5 hours")
+        return random.randint(10800, 12600)  
+    
+    # Early morning (5 AM to 6 AM) - light activity
+    elif 5 <= now < 6:
+        print("Early morning: checking every 60-90 minutes")
+        return random.randint(3600, 5400)  
+    
+    # School hours (6 AM to 4 PM) - most active
+    elif 6 <= now < 16:
+        print("School hours: checking every 10-25 minutes")
+        return random.randint(600, 1500)  
+    
+    # After school (4 PM to 8 PM) - very active
+    elif 16 <= now < 20:
+        print("After school: checking every 10-45 minutes")
+        return random.randint(600, 2700)  
+    
+    # Evening (8 PM to 11 PM) - moderate
+    else:
+        print("Evening: checking every 20-45 minutes") 
+        return random.randint(1200, 2700)  
+
 """
 Run a single session
 """ 
@@ -340,9 +379,7 @@ def run_session_impl():
         print(f"\n🔍 Starting job check {i+1}/{runs}")
         last_jobs_found = single_job_check(last_jobs_found) 
         print(f"💤 Waiting before next check...")
-        # Prepare for next run
-
-        time.sleep(120)  # 2 minutes between checks   
+        time.sleep(get_wait_time())  # 2 minutes between checks   
     print(f"Completed {runs} runs.")
 
     destroy_driver()    # Fresh start
