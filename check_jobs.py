@@ -11,8 +11,6 @@ import os
 import time
 from bs4 import BeautifulSoup
 import requests
-import random
-import sys
 
 """
 Exception classes
@@ -33,7 +31,40 @@ class PermanentError(JobBotError):
     """Error that requires human intervention"""
     pass
 
+"""
+Handle drivers
+"""
+def create_driver():
+    global driver
 
+    # Clean up any existing driver first
+    destroy_driver()    
+
+    # Selenium config
+    options = Options() # Creates an empty ChromeOptions object. This will store settings for Selenium
+    options.add_argument("--headless=new")  # Runs the browser without a GUI window
+    options.add_argument("--no-sandbox") # Disables the browser’s “sandbox” security feature
+    options.add_argument("--disable-dev-shm-usage") # Prevents Chrome from using /dev/shm (shared memory)
+    print("configured selenium\n")
+        
+    try:        
+        # Set up WebDriver
+        driver = webdriver.Chrome(options=options)
+        print("Set up webdrive\n")
+    except Exception as e:
+        raise TemporaryError(f"Failed to create driver: {e}")
+
+def destroy_driver():
+    global driver
+
+    # Clean up current driver if alive
+    try:
+        driver.current_url # If driver is dead, will fail
+        driver.quit()
+    except:
+        pass  
+    finally:
+        driver = None
 
 """
 Helper functions
@@ -83,40 +114,6 @@ def send_text_notification(body):
             print(f"Sent Pushover alert to {recipient}")
         except Exception as e:
             print(f"Failed to send Pushover alert to {recipient}:", e)
-
-def create_driver():
-    global driver
-
-    # Clean up any existing driver first
-    destroy_driver()    
-
-    # Selenium config
-    options = Options() # Creates an empty ChromeOptions object. This will store settings for Selenium
-    options.binary_location = "/usr/bin/chromium-browser" # Tells Selenium where to find the browser executable
-    options.add_argument("--headless")  # Runs the browser without a GUI window
-    options.add_argument("--no-sandbox") # Disables the browser’s “sandbox” security feature
-    options.add_argument("--disable-dev-shm-usage") # Prevents Chrome from using /dev/shm (shared memory)
-    print("configured selenium\n")
-        
-    try:        
-        # Set up WebDriver
-        service = Service("/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=options)
-        print("Set up webdrive\n")
-    except Exception as e:
-        raise TemporaryError(f"Failed to create driver: {e}")
-
-def destroy_driver():
-    global driver
-
-    # Clean up current driver if alive
-    try:
-        driver.current_url # If driver is dead, will fail
-        driver.quit()
-    except:
-        pass  
-    finally:
-        driver = None
 
 def login():
     global driver
@@ -200,20 +197,21 @@ def get_jobs_core():
             raise Exception("Job table not found in page")
     except Exception as e:
         raise TemporaryError(f"Failed to parse job table: {e}")
+    
+    # Print table for debugging 
+    print(job_table.get_text(separator=" | ", strip=True))
 
     # Get all table rows except the header
-    # rows = job_table.find_all("tr")[1:]  # skip the header
-    rows = job_table.find_all("tr")
+    rows = job_table.find_all("tr")[1:]  # skip the header
+    print(rows)
     jobs = set()
     
     if rows:
-        for i, row in enumerate(rows):
-            print(row)
-            if i == 0:  # Skip header row
-                continue
+        for row in rows:
             cells = row.find_all("td")
             details = [cell.get_text(strip=True) for cell in cells]
             job = " | ".join(details)
+            print("Found job:", job)
             jobs.add(job)
     
     return jobs
