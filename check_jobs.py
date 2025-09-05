@@ -67,13 +67,13 @@ def destroy_driver():
         driver = None
 
 """
-Helper functions
+Helper function
 """
-def retry_on_failure(action_func, max_retries=3, delay=15, reset_driver=False):
+def retry_on_failure(action_func, max_retries=3, delay=15, on_failure="refresh"):
     """Try an action with retry on failure"""
     for attempt in range(max_retries):
         try:
-            return action_func()
+            return action_func()    # Return on success
         except Exception as e:
             if attempt == max_retries - 1:  # Last attempt
                 raise TooManyFailuresError(f"Action failed {max_retries} times. Last error: {e}")
@@ -81,11 +81,11 @@ def retry_on_failure(action_func, max_retries=3, delay=15, reset_driver=False):
             print(f"Attempt {attempt + 1} failed during {action_func.__name__} function, refreshing page...")
             print(f"{e}")
 
-            if reset_driver:
-                destroy_driver()
-                create_driver()
-            else:
-                driver.refresh()
+            if on_failure == "refresh":
+                if driver:
+                    driver.refresh()
+            elif on_failure == "destroy_driver":
+                destroy_driver()  # Clean up broken driver so it can be recreated
 
             time.sleep(delay)
 
@@ -163,7 +163,7 @@ def login():
         # Any other selenium error - treat as temporary
         raise TemporaryError(f"Unexpected error during login. Error: {e}")
     
-def get_jobs_core():
+def get_jobs_impl():
     global driver 
     
     # Wait for and click the Available Jobs tab
@@ -218,7 +218,7 @@ def get_jobs_core():
 
 """Get jobs with automatic page refresh retry"""
 def get_jobs():
-    return retry_on_failure(get_jobs_core)
+    return retry_on_failure(get_jobs_impl)
 
 """
 If no jobs are found, check for no jobs available message
@@ -269,7 +269,7 @@ def notify(current_jobs, old_jobs):
 """
 Find jobs on current page 
 """
-def single_job_check_core(last_jobs_found):
+def single_job_check_impl(last_jobs_found):
     login()
     new_jobs = get_jobs()
     
@@ -285,44 +285,36 @@ def single_job_check_core(last_jobs_found):
 def single_job_check(last_jobs_found):
     """Check jobs with retry on failure"""
     def check_action():
-        return single_job_check_core(last_jobs_found)
+        return single_job_check_impl(last_jobs_found)
     
     return retry_on_failure(check_action, max_retries=2)
-
 
 """
 Run a single session
 """ 
-def run_session(checks=10):
-    last_jobs_found = set()  # Fresh memory for this session
+def run_session_impl():
+    create_driver()
 
-    for i in range(checks):  # Check jobs 10 times
-        print(f"\n🔍 Starting job check {i+1}/{checks}")
+    last_jobs_found = set()  # Fresh memory for this session
+    runs = 10
+    for i in range(runs):
+        print(f"\n🔍 Starting job check {i+1}/{runs}")
         last_jobs_found = single_job_check(last_jobs_found) 
         print(f"💤 Waiting before next check...")
-        time.sleep(120)  # 2 minutes between checks
+        time.sleep(120)  # 2 minutes between checks   
+    print(f"Completed {runs} runs.")
 
-"""
-Sets up and creates a driver session which will run x times
-Keeps track of failures
-Once reaches max_failures, will terminate
-""" 
-def run_jobbot_core():
-    create_driver()
-    checks = 10
-    run_session(checks) # Do 'checks' job bot checks in one session
-    print(f"Completed {checks} runs. Getting fresh driver...")
-    destroy_driver()  # Fresh start
-    return # Success - exit the function
+    destroy_driver()    # Fresh start
 
-def run_jobbot():
-    return retry_on_failure(run_jobbot_core, reset_driver=True)
+
+def run_session():            
+    return retry_on_failure(run_session_impl, on_failure="destroy_driver")
 
 
 if __name__ == "__main__":
     try:
         while True:
-            run_jobbot()    
+            run_session()    
     except TooManyFailuresError as e:
             print(f"Too many failures: {e}")
             send_text_notification(f"Job bot needs help: {e}")
