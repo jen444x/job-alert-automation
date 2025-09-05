@@ -14,7 +14,9 @@ import requests
 import random
 import sys
 
-# Exception classes
+"""
+Exception classes
+"""
 class JobBotError(Exception):
     """Base exception for all job bot errors"""
     pass
@@ -23,14 +25,38 @@ class TemporaryError(JobBotError):
     """Error that might be fixed by retrying"""
     pass
 
+class TooManyFailuresError(TemporaryError):
+    """this level exhausted, escalate to next level"""
+    pass
+
 class PermanentError(JobBotError):
     """Error that requires human intervention"""
     pass
 
-class TooManyFailuresError(PermanentError):
-    """Escalated error after too many consecutive failures"""
-    pass
 
+
+"""
+Helper functions
+"""
+def retry_on_failure(action_func, max_retries=3, delay=15, reset_driver=False):
+    """Try an action with retry on failure"""
+    for attempt in range(max_retries):
+        try:
+            return action_func()
+        except Exception as e:
+            if attempt == max_retries - 1:  # Last attempt
+                raise TooManyFailuresError(f"Action failed {max_retries} times. Last error: {e}")
+            
+            print(f"Attempt {attempt + 1} failed during {action_func.__name__} function, refreshing page...")
+            print(f"{e}")
+
+            if reset_driver:
+                destroy_driver()
+                create_driver()
+            else:
+                driver.refresh()
+
+            time.sleep(delay)
 
 driver = None  # Initialize driver variable
 
@@ -140,70 +166,65 @@ def login():
         # Any other selenium error - treat as temporary
         raise TemporaryError(f"Unexpected error during login. Error: {e}")
     
-def get_jobs(max_refreshes):
+def get_jobs_core():
     global driver 
+    
+    # Wait for and click the Available Jobs tab
+    try:
+        available_tab = WebDriverWait(driver, 30).until(
+                EC.element_to_be_clickable((By.ID, "available-tab"))
+            )
+        available_tab.click()
+    except Exception as e:
+        raise TemporaryError(f"Failed to click available tab: {e}")
+        
+    # Wait for job table 
+    try: 
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.ID, os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")))
+        )
+    except Exception as e:
+        raise TemporaryError(f"Failed to find job table: {e}")  
 
-    for attempt in range(max_refreshes):
-        try:
-            # Wait for and click the Available Jobs tab
-            try:
-                available_tab = WebDriverWait(driver, 30).until(
-                        EC.element_to_be_clickable((By.ID, "available-tab"))
-                    )
-                available_tab.click()
-            except Exception as e:
-                print(f"Error clicking Available Jobs tab: {e}")  
-                raise Exception(f"Failed to click available tab: {e}")
-                
-            # Wait for job table 
-            try: 
-                WebDriverWait(driver, 30).until(
-                    EC.presence_of_element_located((By.ID, os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")))
-                )
-            except Exception as e:
-                print(f"Error finding job table: {e}")  
-                raise Exception(f"Failed to find job table: {e}")  
+    # Get full page content 
+    try:
+        html = driver.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+    except Exception as e:
+        raise TemporaryError(f"Failed to get/parse page: {e}")
 
-            # Get full page content 
-            try:
-                html = driver.page_source
-                soup = BeautifulSoup(html, 'html.parser')
-            except Exception as e:
-                print(f"Failed to get/parse page: {e}")
+    # Get table
+    try:
+        job_table = soup.find("table", id=os.getenv("JOB_TABLE_ID", "parent-table-desktop-available"))
+        if not job_table:
+            raise Exception("Job table not found in page")
+    except Exception as e:
+        raise TemporaryError(f"Failed to parse job table: {e}")
 
-            # Get table
-            try:
-                job_table = soup.find("table", id=os.getenv("JOB_TABLE_ID", "parent-table-desktop-available"))
-                if not job_table:
-                    raise Exception("Job table not found in page")
-            except Exception as e:
-                raise Exception(f"Failed to parse job table: {e}")
- 
+    # Get all table rows except the header
+    # rows = job_table.find_all("tr")[1:]  # skip the header
+    rows = job_table.find_all("tr")
+    jobs = set()
+    
+    if rows:
+        for i, row in enumerate(rows):
+            print(row)
+            if i == 0:  # Skip header row
+                continue
+            cells = row.find_all("td")
+            details = [cell.get_text(strip=True) for cell in cells]
+            job = " | ".join(details)
+            jobs.add(job)
+    
+    return jobs
 
-            # Get all table rows except the header
-            # rows = job_table.find_all("tr")[1:]  # skip the header
-            rows = job_table.find_all("tr")
-            jobs = set()
-            
-            if rows:
-                for i, row in enumerate(rows):
-                    print(row)
-                    if i == 0:  # Skip header row
-                        continue
-                    cells = row.find_all("td")
-                    details = [cell.get_text(strip=True) for cell in cells]
-                    job = " | ".join(details)
-                    jobs.add(job)
-            
-            return jobs
-        except Exception as e:
-            if attempt == max_refreshes - 1:    # Last attempt
-                raise TooManyFailuresError(f"Get jobs failed {max_refreshes} times. Last error: {e}")
-            
-            print(f"get_jobs attempt {attempt + 1} failed, refreshing page...")
-            driver.refresh()
-            time.sleep(3)  # Wait after refresh
+"""Get jobs with automatic page refresh retry"""
+def get_jobs():
+    return retry_on_failure(get_jobs_core)
 
+"""
+If no jobs are found, check for no jobs available message
+"""
 def confirm_no_jobs():
     global driver
 
@@ -229,6 +250,9 @@ def confirm_no_jobs():
         print(message) 
         send_text_notification(message)
 
+"""
+Send message to users with job updates
+"""
 def notify(current_jobs, old_jobs):
     # Find new jobs
     new_jobs = current_jobs - old_jobs
@@ -244,73 +268,66 @@ def notify(current_jobs, old_jobs):
         send_text_notification(message)
         print(message)
 
-def single_job_check(last_jobs_found, max_failures):
-    """
-    Try one job check, retry up to n times if it fails
-    """ 
-    for attempt in range(max_failures):
-        try:
-            login()
-            max_refreshes = 3
-            new_jobs = get_jobs(max_refreshes)
-            
-            if new_jobs:    # If jobs, notify
-                notify(new_jobs, last_jobs_found) 
-            else:   # If no jobs, confirm
-                print(f"No jobs available at this time (empty table: {new_jobs})")
-                confirm_no_jobs()
+"""
+Find jobs on current page 
+"""
+def single_job_check_core(last_jobs_found):
+    login()
+    new_jobs = get_jobs()
+    
+    if new_jobs:    # If jobs, notify
+        notify(new_jobs, last_jobs_found) 
+    else:   # If no jobs, confirm
+        print(f"No jobs available at this time (empty table: {new_jobs})")
+        confirm_no_jobs()
 
-            # Update memory
-            return set(new_jobs) # Success! These become the "last seen" for next time
-        except Exception as e:
-            if attempt == max_failures - 1:  # Last attempt
-                raise TooManyFailuresError(f"Job check failed {max_failures} times. Last error: {e}")
-            
-            print(f"Attempt {attempt + 1} failed: {e}")
-            print("Retrying...")
-            time.sleep(15)  # Short wait between retries
+    # Update memory
+    return set(new_jobs) # Success! These become the "last seen" for next time
 
-def run_session(checks):
-    """
-    Try one session, retry up to 3 times if it fails
-    """ 
+def single_job_check(last_jobs_found):
+    """Check jobs with retry on failure"""
+    def check_action():
+        return single_job_check_core(last_jobs_found)
+    
+    return retry_on_failure(check_action, max_retries=2)
+
+
+"""
+Run a single session
+""" 
+def run_session(checks=10):
     last_jobs_found = set()  # Fresh memory for this session
-    max_failures = 2
 
     for i in range(checks):  # Check jobs 10 times
         print(f"\n🔍 Starting job check {i+1}/{checks}")
-        last_jobs_found = single_job_check(last_jobs_found, max_failures)  # Handles 3-error retry logic
+        last_jobs_found = single_job_check(last_jobs_found) 
         print(f"💤 Waiting before next check...")
         time.sleep(120)  # 2 minutes between checks
 
-def run_jobbot(max_failures):
-    """
-    Sets up and creates a driver session which will run x times
-    Keeps track of failures
-    Once reaches max_failures, will terminate
-    """ 
+"""
+Sets up and creates a driver session which will run x times
+Keeps track of failures
+Once reaches max_failures, will terminate
+""" 
+def run_jobbot_core():
+    create_driver()
     checks = 10
+    run_session(checks) # Do 'checks' job bot checks in one session
+    print(f"Completed {checks} runs. Getting fresh driver...")
+    destroy_driver()  # Fresh start
+    return # Success - exit the function
 
-    for attempt in range(max_failures):
-        try:
-            create_driver()
-            run_session(checks) # Do 'checks' job bot checks in one session
-            print(f"Completed {checks} runs. Getting fresh driver...")
-            destroy_driver()  # Fresh start
-            return # Success - exit the function
-        except TemporaryError as e:
-            destroy_driver()  # Clean up failed driver
-
-            if attempt == max_failures - 1:  # Last attempt
-                raise PermanentError(f"Job bot failed 3 times: {e}")
-            print(f"Attempt {attempt+1} failed, trying again...")
+def run_jobbot():
+    return retry_on_failure(run_jobbot_core, reset_driver=True)
 
 
 if __name__ == "__main__":
     try:
-        max_failures = 3
         while True:
-            run_jobbot(max_failures)    
+            run_jobbot()    
+    except TooManyFailuresError as e:
+            print(f"Too many failures: {e}")
+            send_text_notification(f"Job bot needs help: {e}")
     except PermanentError as e:
             print(f"Bot stopping permanently: {e}")
             send_text_notification(f"Job bot needs help: {e}")
