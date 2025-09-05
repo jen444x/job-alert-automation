@@ -69,7 +69,7 @@ def destroy_driver():
 """
 Helper function
 """
-def retry_on_failure(action_func, max_retries=3, delay=15, on_failure="refresh"):
+def retry_on_failure(action_func, max_retries=2, delay=15, on_failure="refresh"):
     """Try an action with retry on failure"""
     for attempt in range(max_retries):
         try:
@@ -287,7 +287,7 @@ def single_job_check(last_jobs_found):
     def check_action():
         return single_job_check_impl(last_jobs_found)
     
-    return retry_on_failure(check_action, max_retries=2)
+    return retry_on_failure(check_action)
 
 """
 Run a single session
