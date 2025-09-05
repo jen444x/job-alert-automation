@@ -115,7 +115,7 @@ def send_text_notification(body):
         except Exception as e:
             print(f"Failed to send Pushover alert to {recipient}:", e)
 
-def login():
+def login_impl():
     global driver
 
     # Get necessary env vars
@@ -163,8 +163,60 @@ def login():
         # Any other selenium error - treat as temporary
         raise TemporaryError(f"Unexpected error during login. Error: {e}")
     
+def login():
+    return retry_on_failure(login_impl)
+
+"""
+If no jobs are found, check for no jobs available message
+"""
+def confirm_no_jobs():
+    global driver
+
+    # Wait to see if a "no jobs available" message appears
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.text_to_be_present_in_element(
+                (By.CLASS_NAME, "pds-message-info"), 
+                "no jobs available"
+            )
+        )
+        print("No jobs available (confirmed from message box).")
+    
+    except TimeoutException:
+        # Message didn't appear - something might be wrong
+        message = "Warning: Empty job table but no 'no jobs available' message found"
+        print(message)
+        send_text_notification(message)
+        
+    except Exception as e:
+        # Other error checking for the message
+        message = f"Error confirming no jobs: {e}"
+        print(message) 
+        send_text_notification(message)
+
+"""
+Send message to users with job updates
+"""
+def notify(current_jobs, old_jobs):
+    # Find new jobs
+    new_jobs = current_jobs - old_jobs
+    if new_jobs:
+        message = "New job(s) posted:\n\n" + "\n\n".join(new_jobs)
+        send_text_notification(message)
+        print(message)
+    
+    # Find jobs still available (in both current and old)
+    still_available = current_jobs & old_jobs
+    if (still_available):
+        message = "Job(s) still available:\n\n" + "\n\n".join(still_available)
+        send_text_notification(message)
+        print(message)
+
 def get_jobs_impl():
     global driver 
+
+    # refresh page before check
+    driver.refresh()
     
     # Wait for and click the Available Jobs tab
     try:
@@ -221,56 +273,9 @@ def get_jobs():
     return retry_on_failure(get_jobs_impl)
 
 """
-If no jobs are found, check for no jobs available message
-"""
-def confirm_no_jobs():
-    global driver
-
-    # Wait to see if a "no jobs available" message appears
-    try:
-        WebDriverWait(driver, 30).until(
-            EC.text_to_be_present_in_element(
-                (By.CLASS_NAME, "pds-message-info"), 
-                "no jobs available"
-            )
-        )
-        print("No jobs available (confirmed from message box).")
-    
-    except TimeoutException:
-        # Message didn't appear - something might be wrong
-        message = "Warning: Empty job table but no 'no jobs available' message found"
-        print(message)
-        send_text_notification(message)
-        
-    except Exception as e:
-        # Other error checking for the message
-        message = f"Error confirming no jobs: {e}"
-        print(message) 
-        send_text_notification(message)
-
-"""
-Send message to users with job updates
-"""
-def notify(current_jobs, old_jobs):
-    # Find new jobs
-    new_jobs = current_jobs - old_jobs
-    if new_jobs:
-        message = "New job(s) posted:\n\n" + "\n\n".join(new_jobs)
-        send_text_notification(message)
-        print(message)
-    
-    # Find jobs still available (in both current and old)
-    still_available = current_jobs & old_jobs
-    if (still_available):
-        message = "Job(s) still available:\n\n" + "\n\n".join(still_available)
-        send_text_notification(message)
-        print(message)
-
-"""
 Find jobs on current page 
 """
 def single_job_check_impl(last_jobs_found):
-    login()
     new_jobs = get_jobs()
     
     if new_jobs:    # If jobs, notify
@@ -289,18 +294,54 @@ def single_job_check(last_jobs_found):
     
     return retry_on_failure(check_action)
 
+def driver_is_alive():
+    try:
+        if driver:
+            driver.current_url  # This will fail if Chrome was killed
+            return True
+    except:
+        return False
+    
+def logged_in():
+    global driver
+
+    try:    
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "job-search"))
+        )
+
+        return True
+    except TimeoutException:
+        print("Job search element not found - likely logged out")
+    except Exception as e:
+        print(f"Other error occurred: {e}")    
+    return False
+
+
+def prepare_session():
+    global driver
+
+    # Make sure driver is alive
+    if not driver_is_alive():
+        create_driver()
+
+    # Make sure logged in
+    if not logged_in():
+        login()
+
 """
 Run a single session
 """ 
 def run_session_impl():
-    create_driver()
-
     last_jobs_found = set()  # Fresh memory for this session
     runs = 10
     for i in range(runs):
+        prepare_session()
         print(f"\n🔍 Starting job check {i+1}/{runs}")
         last_jobs_found = single_job_check(last_jobs_found) 
         print(f"💤 Waiting before next check...")
+        # Prepare for next run
+
         time.sleep(120)  # 2 minutes between checks   
     print(f"Completed {runs} runs.")
 
