@@ -53,13 +53,13 @@ ADMIN_USERS = [
     os.getenv("ADMIN_USER_1")
 ]
 
-def send_text_notification(body):
-    """Sends job alerts"""
-    for recipient in PRODUCTION_USERS:
+def send_text_notification(users, message):
+    """Sends text alerts"""
+    for recipient in users:
         payload = {
             "token": os.getenv("PUSHOVER_API_TOKEN"),
             "user": recipient,
-            "message": body,
+            "message": message,
         }
 
         try:
@@ -69,30 +69,15 @@ def send_text_notification(body):
         except Exception as e:
             print(f"Failed to send Pushover alert to {recipient}:", e)
 
-def alert_failure(body):
-    """Sends debug errors"""
-    for recipient in ADMIN_USERS:
-        payload = {
-            "token": os.getenv("PUSHOVER_API_TOKEN"),
-            "user": recipient,
-            "message": body,
-        }
-
-        try:
-            response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
-            response.raise_for_status()
-            print(f"Sent Pushover alert to {recipient}")
-        except Exception as e:
-            print(f"Failed to send Pushover alert to {recipient}:", e)
-
-def send_screenshot_notification(screenshot_path, caption):
-    for recipient in PRODUCTION_USERS:
+def send_screenshot_notification(users, message, screenshot_path):
+    """Sends screenshot alerts"""
+    for recipient in users:
         try:
             with open(screenshot_path, 'rb') as image_file:
                 payload = {
                     "token": os.getenv("PUSHOVER_API_TOKEN"),
                     "user": recipient,
-                    "message": caption,
+                    "message": message,
                 }
                 files = {
                     "attachment": image_file
@@ -105,6 +90,21 @@ def send_screenshot_notification(screenshot_path, caption):
         except Exception as e:
             print(f"Failed to send screenshot to {recipient}:", e)
 
+def send_notification(users, message, screenshot_path):
+    print(message)
+
+    if screenshot_path:
+        # Send screenshot version
+        send_screenshot_notification(users, message, screenshot_path)
+    else:
+        # Send text-only version
+        send_text_notification(users, message)
+
+def notify_admin(message, screenshot_path=None):
+    send_notification(ADMIN_USERS, message, screenshot_path)
+
+def notify_users(message, screenshot_path=None):
+    send_notification(ADMIN_USERS, message, screenshot_path)
 
 """
 Randomized wait times
@@ -142,12 +142,11 @@ def get_wait_time():
         return random.randint(1200, 2700)  
 
 """
-Helper function
+Try an action with retry on failure
 """
 def retry_on_failure(action_func, max_retries=2, delay=15):
     errors = [] # Stores all errors
 
-    """Try an action with retry on failure"""
     for attempt in range(max_retries):
         try:
             return action_func()    # Return on success
@@ -281,11 +280,11 @@ def find_confirmation_text(class_name, text):
     
     except TimeoutException:
         # Message didn't appear - something might be wrong
-        alert_failure("Message didn't appear - something might be wrong")
+        notify_admin("Message didn't appear - something might be wrong")
         
     except Exception as e:
         # Other error checking for the message
-        alert_failure(f"Other error checking for the message: {e}")
+        notify_admin(f"Other error checking for the message: {e}")
 
 def get_buttons(class_name):
     buttons = driver.find_elements(By.CLASS_NAME, class_name)
@@ -307,8 +306,7 @@ def confirm_accept():
     screenshot_name = "accept_confirmed.png"
     driver.save_screenshot(screenshot_name)
     caption = "Accept button confirmed"
-    print(caption)
-    send_screenshot_notification(screenshot_name, caption)
+    notify_users(caption, screenshot_name)
     os.remove(screenshot_name)
 
 def confirm_no_jobs():
@@ -322,7 +320,7 @@ def accept_first_job():
 
         if not accept_buttons:
             print("No accept buttons were found")
-            send_text_notification(f"Failed to accept - accept buttons were not found. Trying again")
+            notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
             raise TemporaryError("Accept buttons missing")  # Will retry
 
         first_button = accept_buttons[0]
@@ -342,8 +340,7 @@ def accept_first_job():
         print(message)
         screenshot_name = "accept_clicked.png"
         driver.save_screenshot(screenshot_name)
-        caption = f"{message}"
-        send_screenshot_notification(screenshot_name, caption)
+        notify_admin(message, screenshot_name)
         os.remove(screenshot_name)
 
     except TimeoutException as e:
@@ -365,7 +362,6 @@ def notify_of_jobs(current_jobs):
     # Prepare message and screenshot of jobs found
     now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
     message = f"New job(s) posted at {now.strftime('%I:%M %p')}:\n\n" + "\n\n".join(current_jobs)  
-    print(message)
 
     # Scroll to make sure job table is visible
     job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
@@ -375,8 +371,7 @@ def notify_of_jobs(current_jobs):
     driver.save_screenshot(screenshot_name)
 
     # Send the screenshot notification
-    caption = f"{message}"
-    send_screenshot_notification(screenshot_name, caption)
+    notify_users(message, screenshot_name)
     os.remove(screenshot_name)
 
 def parse_jobs():
@@ -506,13 +501,13 @@ if __name__ == "__main__":
         while True:
             run_session()    
     except TooManyFailuresError as e:
-        alert_failure(f"Too many failures. Job bot needs help: {e}")
+        notify_admin(f"Too many failures. Job bot needs help: {e}")
     except PermanentError as e:
-        alert_failure(f"Bot stopping permanently. Job bot needs help: {e}")
+        notify_users(f"Bot stopping permanently. Job bot needs help: {e}")
     except KeyboardInterrupt:
         print("Manually stopping bot...")
     except Exception as e:
-        alert_failure(f"Fatal error. Job bot crashed: {e}")
+        notify_admin(f"Fatal error. Job bot crashed: {e}")
     finally:
         if 'driver' in globals() and driver:
             driver.quit()
