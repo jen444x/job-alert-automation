@@ -54,7 +54,8 @@ ADMIN_USERS = [
 
 def send_notification(users, message, screenshot_path=None):
     """Sends notifications with optional screenshot"""
-    print(message)
+    print("Sending message to user: ")
+    print(f"message\n\n")
 
     image_file = None
 
@@ -93,9 +94,12 @@ def notify_admin(message, screenshot_path=None):
 def notify_users(message, screenshot_path=None):
     send_notification(PRODUCTION_USERS, message, screenshot_path)
 
-def screenshot_and_notify(message, screenshot_name, notify_function):
+def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin):
     """Takes, sends, then deletes screenshot"""
     global driver
+
+    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
+    message += f"\n\n @ {now.strftime('%I:%M %p')}"
 
     driver.save_screenshot(screenshot_name)
     notify_function(message, screenshot_name)  # This calls whatever function you passed in
@@ -306,7 +310,6 @@ def accept_first_job():
         accept_buttons = get_buttons(class_name="accept-icon")
 
         if not accept_buttons:
-            print("No accept buttons were found")
             notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
             raise TemporaryError("Accept buttons missing")  # Will retry
 
@@ -322,13 +325,9 @@ def accept_first_job():
         time.sleep(5)
 
         # Prepare message and screenshot 
-        now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
-        message = f"Accept button clicked at {now.strftime('%I:%M %p')}"
-        print(message)
+        message = "Accept button clicked"
         screenshot_name = "accept_clicked.png"
-        driver.save_screenshot(screenshot_name)
-        notify_admin(message, screenshot_name)
-        os.remove(screenshot_name)
+        screenshot_and_notify(message, screenshot_name, notify_admin)
 
     except TimeoutException as e:
         # This could be slow network OR bad credentials
@@ -346,20 +345,14 @@ def accept_first_job():
 Send message to users with job updates
 """
 def notify_of_jobs(current_jobs):
-    # Prepare message and screenshot of jobs found
-    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
-    message = f"New job(s) posted at {now.strftime('%I:%M %p')}:\n\n" + "\n\n".join(current_jobs)  
-
     # Scroll to make sure job table is visible
     job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
     driver.execute_script("arguments[0].scrollIntoView(true);", job_table_element)
     time.sleep(1)
-    screenshot_name = "job_found.png"
-    driver.save_screenshot(screenshot_name)
 
-    # Send the screenshot notification
-    notify_users(message, screenshot_name)
-    os.remove(screenshot_name)
+    message = f"New job(s) posted:\n\n" + "\n\n".join(current_jobs) 
+    screenshot_name = "job_found.png"
+    screenshot_and_notify(message, screenshot_name, notify_users)
 
 def parse_jobs():
     global driver 
@@ -407,7 +400,7 @@ def parse_jobs():
 
     # Get all table rows except the header
     rows = job_table.find_all("tr")[1:]  # skip the header
-    print(rows)
+    notify_admin(rows)
     jobs = set()
     
     if rows:
@@ -481,7 +474,6 @@ def run_session_impl():
 
 def run_session():            
     return retry_on_failure(run_session_impl)
-
 
 if __name__ == "__main__":
     try:
