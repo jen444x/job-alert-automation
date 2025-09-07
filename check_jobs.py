@@ -41,9 +41,8 @@ class TooManyFailuresError(PermanentError):
     pass
 
 """
-Send through Pushover
+Send Pushover notifications
 """
-
 PRODUCTION_USERS = [
     os.getenv("ADMIN_USER_1"),    
     os.getenv("PRODUCTION_USER_1")   
@@ -53,58 +52,55 @@ ADMIN_USERS = [
     os.getenv("ADMIN_USER_1")
 ]
 
-def send_text_notification(users, message):
-    """Sends text alerts"""
-    for recipient in users:
-        payload = {
-            "token": os.getenv("PUSHOVER_API_TOKEN"),
-            "user": recipient,
-            "message": message,
-        }
+def send_notification(users, message, screenshot_path=None):
+    """Sends notifications with optional screenshot"""
+    print(message)
 
+    image_file = None
+
+    if screenshot_path:
         try:
-            response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
-            response.raise_for_status()
-            print(f"Sent Pushover alert to {recipient}")
+            image_file = open(screenshot_path, 'rb')
         except Exception as e:
-            print(f"Failed to send Pushover alert to {recipient}:", e)
-
-def send_screenshot_notification(users, message, screenshot_path):
-    """Sends screenshot alerts"""
-    for recipient in users:
-        try:
-            with open(screenshot_path, 'rb') as image_file:
+            print(f"Failed to open screenshot {screenshot_path}: {e}")
+            print(f"Will only send text.")
+    try:
+        for recipient in users:
+            try:
                 payload = {
                     "token": os.getenv("PUSHOVER_API_TOKEN"),
                     "user": recipient,
                     "message": message,
                 }
-                files = {
-                    "attachment": image_file
-                }
+
+                files = None
+                if image_file:
+                    files = {"attachment": image_file}
                 
                 response = requests.post("https://api.pushover.net/1/messages.json", 
-                                       data=payload, files=files)
+                                        data=payload, files=files)
                 response.raise_for_status()
-                print(f"Sent screenshot {screenshot_path} to {recipient}")
-        except Exception as e:
-            print(f"Failed to send screenshot to {recipient}:", e)
-
-def send_notification(users, message, screenshot_path):
-    print(message)
-
-    if screenshot_path:
-        # Send screenshot version
-        send_screenshot_notification(users, message, screenshot_path)
-    else:
-        # Send text-only version
-        send_text_notification(users, message)
+                print(f"Sent notification to {recipient}")
+            except Exception as e:
+                print(f"Failed to send notification to {recipient}:", e)
+    finally:
+        if image_file:
+            image_file.close()
 
 def notify_admin(message, screenshot_path=None):
     send_notification(ADMIN_USERS, message, screenshot_path)
 
 def notify_users(message, screenshot_path=None):
-    send_notification(ADMIN_USERS, message, screenshot_path)
+    send_notification(PRODUCTION_USERS, message, screenshot_path)
+
+def screenshot_and_notify(message, screenshot_name, notify_function):
+    """Takes, sends, then deletes screenshot"""
+    global driver
+
+    driver.save_screenshot(screenshot_name)
+    notify_function(message, screenshot_name)  # This calls whatever function you passed in
+    os.remove(screenshot_name)
+
 
 """
 Randomized wait times
@@ -212,7 +208,7 @@ def destroy_driver():
     finally:
         driver = None
 
-def login_impl():
+def login():
     global driver
 
     # Get necessary env vars
@@ -228,7 +224,6 @@ def login_impl():
         # Go to login URL
         driver.get(PORTAL_URL)
         print("Went to login URL\n")
-        # driver.save_screenshot("after_load.png")
 
         # Wait for login form elements
         username_field = WebDriverWait(driver, 15).until(
@@ -239,8 +234,6 @@ def login_impl():
         # Fill in form to login
         username_field.send_keys(USERNAME)
         password_field.send_keys(PASSWORD + Keys.RETURN)
-        # Save screenshot so we can verify login
-        # driver.save_screenshot("login_check.png")
 
         # Wait for successful login - job-search element should appear
         WebDriverWait(driver, 20).until(
@@ -259,9 +252,6 @@ def login_impl():
     except Exception as e:
         # Any other selenium error - treat as temporary
         raise TemporaryError(f"Unexpected error during login. Error: {e}")
-    
-def login():
-    return retry_on_failure(login_impl)
 
 """
 Find confirmation message 
@@ -302,12 +292,9 @@ Accept jobs
 def confirm_accept():
     find_confirmation_text(class_name="pds-message-content", text="Success, you have accepted job ")
 
-    # Prepare message and screenshot 
-    screenshot_name = "accept_confirmed.png"
-    driver.save_screenshot(screenshot_name)
-    caption = "Accept button confirmed"
-    notify_users(caption, screenshot_name)
-    os.remove(screenshot_name)
+    screenshot_name="accept_confirmed.png"
+    message = "Accept button confirmed"
+    screenshot_and_notify(message, screenshot_name, notify_users)
 
 def confirm_no_jobs():
     find_confirmation_text(class_name="pds-message-info", text="no jobs available")
@@ -512,8 +499,3 @@ if __name__ == "__main__":
         if 'driver' in globals() and driver:
             driver.quit()
             print("Browser cleaned up")
-
-# Make sure i have a driver when starting
-# When fialing 3 times save all error messages then send if failed 3 times
-# maybe a function that will run things x amount of times instead of having to rewrite logic
-# yes do that so i can do refreshes for things like waiting fro clickable button to show just refresh instead of logging in again 
