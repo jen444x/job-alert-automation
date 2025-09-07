@@ -40,16 +40,38 @@ class TooManyFailuresError(PermanentError):
     """Too many retries = permanent failure"""
     pass
 
-RECIPIENTS = [
-    os.getenv("USER_KEY1"),    
-    # os.getenv("USER_KEY2")    
-]
-
 """
 Send through Pushover
 """
+
+PRODUCTION_USERS = [
+    os.getenv("ADMIN_USER_1"),    
+    os.getenv("PRODUCTION_USER_1")   
+]
+
+ADMIN_USERS = [
+    os.getenv("ADMIN_USER_1")
+]
+
 def send_text_notification(body):
-    for recipient in RECIPIENTS:
+    """Sends job alerts"""
+    for recipient in PRODUCTION_USERS:
+        payload = {
+            "token": os.getenv("PUSHOVER_API_TOKEN"),
+            "user": recipient,
+            "message": body,
+        }
+
+        try:
+            response = requests.post("https://api.pushover.net/1/messages.json", data=payload)
+            response.raise_for_status()
+            print(f"Sent Pushover alert to {recipient}")
+        except Exception as e:
+            print(f"Failed to send Pushover alert to {recipient}:", e)
+
+def alert_failure(body):
+    """Sends debug errors"""
+    for recipient in ADMIN_USERS:
         payload = {
             "token": os.getenv("PUSHOVER_API_TOKEN"),
             "user": recipient,
@@ -64,7 +86,7 @@ def send_text_notification(body):
             print(f"Failed to send Pushover alert to {recipient}:", e)
 
 def send_screenshot_notification(screenshot_path, caption):
-    for recipient in RECIPIENTS:
+    for recipient in PRODUCTION_USERS:
         try:
             with open(screenshot_path, 'rb') as image_file:
                 payload = {
@@ -82,6 +104,7 @@ def send_screenshot_notification(screenshot_path, caption):
                 print(f"Sent screenshot {screenshot_path} to {recipient}")
         except Exception as e:
             print(f"Failed to send screenshot to {recipient}:", e)
+
 
 """
 Randomized wait times
@@ -258,15 +281,11 @@ def find_confirmation_text(class_name, text):
     
     except TimeoutException:
         # Message didn't appear - something might be wrong
-        message = "No text found"
-        print(message)
-        send_text_notification(message)
+        alert_failure("Message didn't appear - something might be wrong")
         
     except Exception as e:
         # Other error checking for the message
-        message = f"Error confirming: {e}"
-        print(message) 
-        send_text_notification(message)
+        alert_failure(f"Other error checking for the message: {e}")
 
 def get_buttons(class_name):
     buttons = driver.find_elements(By.CLASS_NAME, class_name)
@@ -487,16 +506,13 @@ if __name__ == "__main__":
         while True:
             run_session()    
     except TooManyFailuresError as e:
-            print(f"Too many failures: {e}")
-            send_text_notification(f"Job bot needs help: {e}")
+        alert_failure(f"Too many failures. Job bot needs help: {e}")
     except PermanentError as e:
-            print(f"Bot stopping permanently: {e}")
-            send_text_notification(f"Job bot needs help: {e}")
+        alert_failure(f"Bot stopping permanently. Job bot needs help: {e}")
     except KeyboardInterrupt:
         print("Manually stopping bot...")
     except Exception as e:
-        print(f"Fatal error: {e}")
-        send_text_notification(f"Job bot crashed: {e}")
+        alert_failure(f"Fatal error. Job bot crashed: {e}")
     finally:
         if 'driver' in globals() and driver:
             driver.quit()
