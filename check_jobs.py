@@ -32,12 +32,12 @@ class TemporaryError(JobBotError):
     """Error that might be fixed by retrying"""
     pass
 
-class TooManyFailuresError(TemporaryError):
-    """this level exhausted, escalate to next level"""
-    pass
-
 class PermanentError(JobBotError):
     """Error that requires human intervention"""
+    pass
+
+class TooManyFailuresError(PermanentError):
+    """Too many retries = permanent failure"""
     pass
 
 RECIPIENTS = [
@@ -121,32 +121,32 @@ def get_wait_time():
 """
 Helper function
 """
-def retry_on_failure(action_func, max_retries=2, delay=15, on_failure="refresh"):
+def retry_on_failure(action_func, max_retries=2, delay=15):
     errors = [] # Stores all errors
 
     """Try an action with retry on failure"""
     for attempt in range(max_retries):
         try:
             return action_func()    # Return on success
-        except Exception as e:
-            errors.append(f"Attempt {attempt + 1} failed during {action_func.__name__}: {e}")  
+         
+        except (TemporaryError, Exception) as e:
+            # Handle both temporary and unexpected errors the same way
+            error_type = "Temporary" if isinstance(e, TemporaryError) else "Unexpected"
+            errors.append(f"Attempt {attempt + 1} failed during {action_func.__name__}: {error_type} - {e}")  
             
             if attempt == max_retries - 1:  # Last attempt
-                # Now we can show ALL errors that happened
                 all_errors = "\n".join(errors)
-                raise TooManyFailuresError(f"Action failed {max_retries} times:\n{all_errors}")
+                raise TooManyFailuresError(f"{action_func.__name__} failed {max_retries} times:\n{all_errors}")
             
-            print(f"Attempt {attempt + 1} failed during {action_func.__name__} function, refreshing page...")
-            print(f"{e}")
-
-            if on_failure == "refresh":
-                if driver:
-                    driver.refresh()
-            elif on_failure == "destroy_driver":
-                destroy_driver()  # Clean up broken driver so it can be recreated
-
+            print(f"{error_type} error, refreshing and retrying: {e}")
+            if driver:
+                driver.refresh()
             time.sleep(delay)
 
+        except PermanentError as e:
+            # Don't retry, escalate immediately
+            print(f"Permanent error in {action_func.__name__}: {e}")
+            raise e
 """
 Handle drivers
 """
@@ -242,53 +242,78 @@ def login():
     return retry_on_failure(login_impl)
 
 """
-If no jobs are found, check for no jobs available message
+Find confirmation message 
 """
-def confirm_no_jobs():
+def find_confirmation_text(class_name, text):
     global driver
 
-    # Wait to see if a "no jobs available" message appears
+    # Wait to see if message appears
+    # if this method doesnt work switch to other
     try:
         WebDriverWait(driver, 30).until(
             EC.text_to_be_present_in_element(
-                (By.CLASS_NAME, "pds-message-info"), 
-                "no jobs available"
+                (By.CLASS_NAME, class_name), text
             )
         )
-        print("No jobs available (confirmed from message box).")
     
     except TimeoutException:
         # Message didn't appear - something might be wrong
-        message = "Warning: Empty job table but no 'no jobs available' message found"
+        message = "No text found"
         print(message)
         send_text_notification(message)
         
     except Exception as e:
         # Other error checking for the message
-        message = f"Error confirming no jobs: {e}"
+        message = f"Error confirming: {e}"
         print(message) 
         send_text_notification(message)
 
+def get_buttons(class_name):
+    buttons = driver.find_elements(By.CLASS_NAME, class_name)
+
+    if not buttons:
+        print("No accept buttons were found")
+        return None
+    
+    print(f"Found {len(buttons)} {class_name} buttons")
+    return buttons
+
 """
-Accept first job in list
+Accept jobs
 """
-def accept_first_job_impl():
+def confirm_accept():
+    find_confirmation_text(class_name="pds-message-content", text="Success, you have accepted job ")
+
+    # Prepare message and screenshot 
+    screenshot_name = "accept_confirmed.png"
+    driver.save_screenshot(screenshot_name)
+    caption = "Accept button confirmed"
+    print(caption)
+    send_screenshot_notification(screenshot_name, caption)
+    os.remove(screenshot_name)
+
+def confirm_no_jobs():
+    find_confirmation_text(class_name="pds-message-info", text="no jobs available")
+    print("No jobs available (confirmed from message box).")
+
+def accept_first_job():
     try:
-        # Make sure accept button is present and clickable
-        accept_buttons = driver.find_elements(By.CLASS_NAME, "accept-icon")
-        print(f"Found {len(accept_buttons)} accept buttons")
+        # Get all buttons
+        accept_buttons = get_buttons(class_name="accept-icon")
 
         if not accept_buttons:
             print("No accept buttons were found")
-            return False
+            send_text_notification(f"Failed to accept - accept buttons were not found. Trying again")
+            raise TemporaryError("Accept buttons missing")  # Will retry
 
         first_button = accept_buttons[0]
 
         if not first_button.is_displayed() or not first_button.is_enabled():
-            print("Button is found but not working")
-            return False
+            print("Button is found but not active")
+            raise TemporaryError("Accept button is not active.")
 
         driver.execute_script("arguments[0].click();", first_button)
+        
         # Wait for page to respond
         time.sleep(5)
 
@@ -314,13 +339,6 @@ def accept_first_job_impl():
         # Any other selenium error - treat as temporary
         raise TemporaryError(f"Unexpected error during accept. Error: {e}")
 
-def accept_first_job(jobs):
-    # add so that if it fails, check if job is still available
-    def check_action():
-        return accept_first_job(jobs)
-    
-    return retry_on_failure(check_action, delay=3)
-
 """
 Send message to users with job updates
 """
@@ -342,11 +360,14 @@ def notify_of_jobs(current_jobs):
     send_screenshot_notification(screenshot_name, caption)
     os.remove(screenshot_name)
 
-def get_jobs_impl():
+def parse_jobs():
     global driver 
 
     # refresh page before check
-    driver.refresh()
+    try:
+        driver.refresh()
+    except Exception as e:
+        raise TemporaryError(f"Failed to refresh page: {e}")
     
     # Wait for and click the Available Jobs tab
     try:
@@ -398,30 +419,6 @@ def get_jobs_impl():
     
     return jobs
 
-"""Get jobs with automatic page refresh retry"""
-def get_jobs():
-    return retry_on_failure(get_jobs_impl)
-
-"""
-Find jobs on current page 
-"""
-def single_job_check_impl():
-    jobs = get_jobs()
-    
-    if jobs:    
-        notify_of_jobs(jobs) 
-        if accept_first_job(jobs):
-            print("job was accepted")
-        else:
-            print("something went wrong")
-    else:   
-        print(f"No jobs available at this time (empty table: {jobs})")
-        confirm_no_jobs()
-
-def single_job_check():
-    """Check jobs with retry on failure"""    
-    return retry_on_failure(single_job_check_impl)
-
 def driver_is_alive():
     try:
         if driver:
@@ -465,7 +462,15 @@ def run_session_impl():
     for i in range(runs):
         prepare_session()
         print(f"\n🔍 Starting job check {i+1}/{runs}")
-        single_job_check() 
+        jobs_found = parse_jobs() 
+
+        if jobs_found:
+            notify_of_jobs(jobs_found)
+            accept_first_job()
+            confirm_accept()
+        else:
+            confirm_no_jobs()
+        
         print(f"💤 Waiting before next check...")
         time.sleep(get_wait_time())  
     print(f"Completed {runs} runs.")
@@ -474,7 +479,7 @@ def run_session_impl():
 
 
 def run_session():            
-    return retry_on_failure(run_session_impl, on_failure="destroy_driver")
+    return retry_on_failure(run_session_impl)
 
 
 if __name__ == "__main__":
