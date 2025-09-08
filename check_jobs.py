@@ -55,7 +55,7 @@ ADMIN_USERS = [
 def send_notification(users, message, screenshot_path=None):
     """Sends notifications with optional screenshot"""
     print("Sending message to user: ")
-    print(f"message\n\n")
+    print(f"{message}\n\n")
 
     image_file = None
 
@@ -275,13 +275,30 @@ def find_confirmation_text(class_name, text):
     except TimeoutException as e:
         # Message didn't appear - something might be wrong
         notify_admin("Message didn't appear - something might be wrong")
-        raise JobBotError(f"Message didn't appear: {e}")
+        raise TemporaryError(f"Message didn't appear: {e}")
         
     except Exception as e:
         # Other error checking for the message
         notify_admin(f"Other error checking for the message: {e}")
-        raise JobBotError(f"Message didn't appear: {e}")
+        raise TemporaryError(f"Message didn't appear: {e}")
 
+def get_buttons(class_name):
+    try:
+        buttons = driver.find_elements(By.CLASS_NAME, class_name)
+
+        if not buttons:
+            print("No accept buttons were found")
+            return None
+        
+        print(f"Found {len(buttons)} {class_name} buttons")
+        return buttons
+    
+    except Exception as e:
+        raise TemporaryError(f"Unexpected error during get_buttons(). Error: {e}")    
+
+"""
+Accept jobs
+"""
 def confirm_job_accept():
     try:
         find_confirmation_text(class_name="pds-message-content", text="Success, you have accepted job ")
@@ -290,64 +307,58 @@ def confirm_job_accept():
         screenshot_and_notify(message, screenshot_name, notify_users)
 
     except Exception as e:
-        # Check if job was taken
-        find_confirmation_text("pds-message-content", "Accept Job failed. Job is no longer available.")
-        message = "Job is no longer available"
-        screenshot_name = "job_gone.png"
-        screenshot_and_notify(message, screenshot_name, notify_users)
-
-def get_buttons(class_name):
-    buttons = driver.find_elements(By.CLASS_NAME, class_name)
-
-    if not buttons:
-        print("No accept buttons were found")
-        return None
+        try:
+            # Check if job was taken
+            find_confirmation_text("pds-message-content", "Accept Job failed. Job is no longer available.")
+            message = "Job is no longer available"
+            screenshot_name = "job_gone.png"
+            screenshot_and_notify(message, screenshot_name, notify_users)
+        except Exception as e:
+            raise TemporaryError(f"Error when checking if job is no longer available: {e}")
     
-    print(f"Found {len(buttons)} {class_name} buttons")
-    return buttons
+def click_accept():
+    # Get all buttons
+    accept_buttons = get_buttons(class_name="accept-icon")
 
-"""
-Accept jobs
-"""
+    if not accept_buttons:
+        notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
+        raise TemporaryError("Accept buttons missing")  # Will retry
+
+    first_button = accept_buttons[0]
+
+    if not first_button.is_displayed() or not first_button.is_enabled():
+        print("Button is found but not active")
+        raise TemporaryError("Accept button is not active.")
+
+    driver.execute_script("arguments[0].click();", first_button)
+    
+def click_confirm_accept():
+    # Using WebDriverWait since page changed after click accept
+    global driver
+    try:
+        confirm_btn = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((By.ID, "confirm-dialog"))
+        )
+        confirm_btn.click()
+    except TimeoutException:
+        raise TemporaryError("Confirmation button did not appear within 30 seconds")
+    except Exception as e:
+        raise TemporaryError(f"Failed to click confirmation button: {e}")
 
 def accept_first_job():
     try:
-        # Get all buttons
-        accept_buttons = get_buttons(class_name="accept-icon")
-
-        if not accept_buttons:
-            notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
-            raise TemporaryError("Accept buttons missing")  # Will retry
-
-        first_button = accept_buttons[0]
-
-        if not first_button.is_displayed() or not first_button.is_enabled():
-            print("Button is found but not active")
-            raise TemporaryError("Accept button is not active.")
-
-        driver.execute_script("arguments[0].click();", first_button)
-        
-        # Wait for page to respond
+        click_accept()
         time.sleep(5)
+        click_confirm_accept()
+        confirm_job_accept()
 
         # Prepare message and screenshot 
         message = "Accept button clicked"
         screenshot_name = "accept_clicked.png"
         screenshot_and_notify(message, screenshot_name, notify_admin)
-
-        confirm_job_accept()
-
-    except TimeoutException as e:
-        # This could be slow network OR bad credentials
-        raise TemporaryError(f"Timeout exception during accept. Error: {e}")
-    
-    except NoSuchElementException as e:
-        # Elements not found - website might have changed
-        raise TemporaryError(f"Elements not found during accept. Error: {e}") 
     
     except Exception as e:
-        # Any other selenium error - treat as temporary
-        raise TemporaryError(f"Unexpected error during accept. Error: {e}")
+        raise TemporaryError(f"Error during accept. Error: {e}")
 
 """
 Send message to users with job updates
@@ -404,11 +415,12 @@ def parse_jobs():
         raise TemporaryError(f"Failed to parse job table: {e}")
     
     # Print table for debugging 
-    print(job_table.get_text(separator=" | ", strip=True))
+    print(f"{job_table.get_text(separator=" | ", strip=True)}\n")
 
     # Get all table rows except the header
     rows = job_table.find_all("tr")[1:]  # skip the header
-    notify_admin(rows)
+    print(f"rows:\n {rows}")
+
     jobs = set()
     
     if rows:
@@ -446,16 +458,20 @@ def logged_in():
     return False
 
 
-def prepare_session():
+def prepare_session(i):
     global driver
 
-    # Make sure driver is alive
-    if not driver_is_alive():
+    if (i == 0):
         create_driver()
-
-    # Make sure logged in
-    if not logged_in():
         login()
+    else:
+        # Make sure driver is alive
+        if not driver_is_alive():
+            create_driver()
+
+        # Make sure logged in
+        if not logged_in():
+            login()
 
 """
 Run a single session
@@ -463,7 +479,7 @@ Run a single session
 def run_session_impl():
     runs = 10
     for i in range(runs):
-        prepare_session()
+        prepare_session(i)
         print(f"\n🔍 Starting job check {i+1}/{runs}")
         jobs_found = parse_jobs() 
 
