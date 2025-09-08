@@ -18,6 +18,13 @@ import pytz
 # Initialize driver variable
 driver = None  
 
+# Configurable time ranges (in minutes)
+SLEEP_MIN, SLEEP_MAX = 180, 210          # 3-3.5 hours
+EARLY_MIN, EARLY_MAX = 10, 30      
+SCHOOL_MIN, SCHOOL_MAX = 25, 70       
+AFTER_SCHOOL_MIN, AFTER_SCHOOL_MAX = 25, 60  
+EVENING_MIN, EVENING_MAX = 30, 45        
+
 # Load credentials
 load_dotenv() 
 
@@ -118,28 +125,28 @@ def get_wait_time():
     
     # Late night (11 PM to 5 AM) - sleep mode
     if current_hour >= 23 or current_hour < 5:
-        print("Sleep mode: checking every 3-3.5 hours")
-        return random.randint(10800, 12600)  
+        print(f"Sleep mode: checking every {SLEEP_MIN}-{SLEEP_MAX} minutes")
+        return random.randint(SLEEP_MIN * 60, SLEEP_MAX * 60)
     
-    # Early morning (5 AM to 6 AM) - light activity
-    elif 5 <= current_hour < 6:
-        print("Early morning: checking every 60-90 minutes")
-        return random.randint(3600, 5400)  
+    # Early morning (5 AM to 8 AM) - light activity
+    elif 5 <= current_hour < 8:
+        print(f"Early morning: checking every {EARLY_MIN}-{EARLY_MAX} minutes")
+        return random.randint(EARLY_MIN * 60, EARLY_MAX * 60)
     
-    # School hours (6 AM to 4 PM) - most active
-    elif 6 <= current_hour < 16:
-        print("School hours: checking every 10-25 minutes")
-        return random.randint(600, 1500)  
+    # School hours (8 AM to 4 PM) - most active
+    elif 8 <= current_hour < 16:
+        print(f"School hours: checking every {SCHOOL_MIN}-{SCHOOL_MAX} minutes")
+        return random.randint(SCHOOL_MIN * 60, SCHOOL_MAX * 60)
     
     # After school (4 PM to 8 PM) - very active
     elif 16 <= current_hour < 20:
-        print("After school: checking every 10-45 minutes")
-        return random.randint(600, 2700)  
+        print(f"After school: checking every {AFTER_SCHOOL_MIN}-{AFTER_SCHOOL_MAX} minutes")
+        return random.randint(AFTER_SCHOOL_MIN * 60, AFTER_SCHOOL_MAX * 60)
     
     # Evening (8 PM to 11 PM) - moderate
     else:
-        print("Evening: checking every 20-45 minutes") 
-        return random.randint(1200, 2700)  
+        print(f"Evening: checking every {EVENING_MIN}-{EVENING_MAX} minutes")
+        return random.randint(EVENING_MIN * 60, EVENING_MAX * 60)
 
 """
 Try an action with retry on failure
