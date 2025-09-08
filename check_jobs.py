@@ -272,13 +272,29 @@ def find_confirmation_text(class_name, text):
             )
         )
     
-    except TimeoutException:
+    except TimeoutException as e:
         # Message didn't appear - something might be wrong
         notify_admin("Message didn't appear - something might be wrong")
+        raise JobBotError(f"Message didn't appear: {e}")
         
     except Exception as e:
         # Other error checking for the message
         notify_admin(f"Other error checking for the message: {e}")
+        raise JobBotError(f"Message didn't appear: {e}")
+
+def confirm_job_accept():
+    try:
+        find_confirmation_text(class_name="pds-message-content", text="Success, you have accepted job ")
+        screenshot_name="accept_confirmed.png"
+        message = "Accept button confirmed"
+        screenshot_and_notify(message, screenshot_name, notify_users)
+
+    except Exception as e:
+        # Check if job was taken
+        find_confirmation_text("pds-message-content", "Accept Job failed. Job is no longer available.")
+        message = "Job is no longer available"
+        screenshot_name = "job_gone.png"
+        screenshot_and_notify(message, screenshot_name, notify_users)
 
 def get_buttons(class_name):
     buttons = driver.find_elements(By.CLASS_NAME, class_name)
@@ -293,16 +309,6 @@ def get_buttons(class_name):
 """
 Accept jobs
 """
-def confirm_accept():
-    find_confirmation_text(class_name="pds-message-content", text="Success, you have accepted job ")
-
-    screenshot_name="accept_confirmed.png"
-    message = "Accept button confirmed"
-    screenshot_and_notify(message, screenshot_name, notify_users)
-
-def confirm_no_jobs():
-    find_confirmation_text(class_name="pds-message-info", text="no jobs available")
-    print("No jobs available (confirmed from message box).")
 
 def accept_first_job():
     try:
@@ -328,6 +334,8 @@ def accept_first_job():
         message = "Accept button clicked"
         screenshot_name = "accept_clicked.png"
         screenshot_and_notify(message, screenshot_name, notify_admin)
+
+        confirm_job_accept()
 
     except TimeoutException as e:
         # This could be slow network OR bad credentials
@@ -409,7 +417,8 @@ def parse_jobs():
             details = [cell.get_text(strip=True) for cell in cells]
             job = " | ".join(details)
             print("Found job:", job)
-            jobs.add(job)
+            if "09/15/2025" not in job:
+                jobs.add(job)
     
     return jobs
 
@@ -461,9 +470,8 @@ def run_session_impl():
         if jobs_found:
             notify_of_jobs(jobs_found)
             accept_first_job()
-            confirm_accept()
         else:
-            confirm_no_jobs()
+            find_confirmation_text("pds-message-info", "no jobs available")
         
         print(f"💤 Waiting before next check...")
         time.sleep(get_wait_time())  
