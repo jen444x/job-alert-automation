@@ -329,21 +329,24 @@ def confirm_job_accept():
         except Exception as e:
             raise TemporaryError(f"Error when checking if job is no longer available: {e}")
     
-def click_accept():
+def click_accept(job_index=0):
     # Get all buttons
     accept_buttons = get_buttons(class_name="accept-icon")
 
     if not accept_buttons:
         notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
         raise TemporaryError("Accept buttons missing")  # Will retry
+    
+    if job_index >= len(accept_buttons):
+        raise TemporaryError(f"Job index {job_index} out of range - only {len(accept_buttons)} jobs available")
 
-    first_button = accept_buttons[0]
+    button = accept_buttons[job_index]
 
-    if not first_button.is_displayed() or not first_button.is_enabled():
-        print("Button is found but not active")
-        raise TemporaryError("Accept button is not active.")
+    if not button.is_displayed() or not button.is_enabled():
+        print(f"Button {job_index} is found but not active")
+        raise TemporaryError(f"Accept button {job_index} is not active.")
 
-    driver.execute_script("arguments[0].click();", first_button)
+    driver.execute_script("arguments[0].click();", button)
     
 def click_confirm_accept():
     # Using WebDriverWait since page changed after click accept
@@ -364,29 +367,42 @@ def accept_first_job(jobs):
     date_today = now.strftime("%m/%d/%Y")
     print(date_today) 
 
-    for job in jobs:
+    # Convert set to list so we can iterate in order
+    job_list = list(jobs)
+
+    for i, job in enumerate(job_list):
+        # Convert set to list so we can iterate in order
+        print(f"Checking job {i+1}: {job}")
+        
+        # Check if this job should be skipped
+        
         # Check same-day jobs
         if BLOCK_SAME_DAY and date_today in job:
-            notify_users(f"Skipped auto-accept for same-day job: {date_today}")
+            notify_users(f"Skipped auto accept {i+1} - same day ({date_today})")
             return
+        
         # Check blocked dates
         for blocked_date in BLOCKED_DATES:
             if blocked_date in job:
-                print(f"Skipped auto-accept for blocked date: {blocked_date}")
+                notify_users(f"Skipped auto accept {i+1} - blocked day ({date_today})")
                 return
-    try:
-        click_accept()
-        time.sleep(5)
-        click_confirm_accept()
-        confirm_job_accept()
+        
+        # If this job passes all filters, accept it
+        print(f"Accepting job {i+1}")
+        try:
+            click_accept(i)  # click the accept button for job at index i
+            time.sleep(5)
+            click_confirm_accept()
+            confirm_job_accept()
 
-        # Prepare message and screenshot 
-        message = "Accept button clicked"
-        screenshot_name = "accept_clicked.png"
-        screenshot_and_notify(message, screenshot_name, notify_admin)
-    
-    except Exception as e:
-        raise TemporaryError(f"Error during job accept. Error: {e}")
+            message = "Accept button clicked"
+            screenshot_name = "accept_clicked.png"
+            screenshot_and_notify(message, screenshot_name, notify_admin)
+            return  # Exit after successfully accepting one job
+            
+        except Exception as e:
+            raise TemporaryError(f"Error during job accept. Error: {e}")
+
 
 """
 Send message to users with job updates
