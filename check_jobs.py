@@ -23,7 +23,13 @@ SLEEP_MIN, SLEEP_MAX = 180, 210          # 3-3.5 hours
 EARLY_MIN, EARLY_MAX = 10, 30      
 SCHOOL_MIN, SCHOOL_MAX = 25, 70       
 AFTER_SCHOOL_MIN, AFTER_SCHOOL_MAX = 25, 60  
-EVENING_MIN, EVENING_MAX = 30, 45        
+EVENING_MIN, EVENING_MAX = 30, 45  
+
+BLOCKED_DATES = [
+    "09/15/2025"
+]
+
+BLOCK_SAME_DAY = True  # Easy toggle
 
 # Load credentials
 load_dotenv() 
@@ -353,17 +359,21 @@ def click_confirm_accept():
         raise TemporaryError(f"Failed to click confirmation button: {e}")
 
 def accept_first_job(jobs):
-    # Do not accept same day jobs
+    # Do not accept unwanted dates
     now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
     date_today = now.strftime("%m/%d/%Y")
     print(date_today) 
 
     for job in jobs:
-        if date_today in job:
-            print("Job will not be automatically accepted.")
+        # Check same-day jobs
+        if BLOCK_SAME_DAY and date_today in job:
+            notify_users(f"Skipped auto-accept for same-day job: {date_today}")
             return
-        
-        
+        # Check blocked dates
+        for blocked_date in BLOCKED_DATES:
+            if blocked_date in job:
+                print(f"Skipped auto-accept for blocked date: {blocked_date}")
+                return
     try:
         click_accept()
         time.sleep(5)
@@ -447,8 +457,7 @@ def parse_jobs():
             details = [cell.get_text(strip=True) for cell in cells]
             job = " | ".join(details)
             print("Found job:", job)
-            if "09/15/2025" not in job:
-                jobs.add(job)
+            jobs.add(job)
     
     return jobs
 
@@ -503,7 +512,7 @@ def run_session_impl():
 
         jobs = set()
 
-        job = "| Monday09/08/2025 | 07:45 AM03:00 PM | MARLYCEPATINO | K-3 | MCKINLEY ELEMENTARY |  | "
+        job = "| Monday09/15/2025 | 07:45 AM03:00 PM | MARLYCEPATINO | K-3 | MCKINLEY ELEMENTARY |  | "
         
         print("Found job:", job)
         jobs.add(job)
