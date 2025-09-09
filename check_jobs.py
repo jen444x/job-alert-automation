@@ -352,7 +352,18 @@ def click_confirm_accept():
     except Exception as e:
         raise TemporaryError(f"Failed to click confirmation button: {e}")
 
-def accept_first_job():
+def accept_first_job(jobs):
+    # Do not accept same day jobs
+    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
+    date_today = now.strftime("%m/%d/%Y")
+    print(date_today) 
+
+    for job in jobs:
+        if date_today in job:
+            print("Job will not be automatically accepted.")
+            return
+        
+        
     try:
         click_accept()
         time.sleep(5)
@@ -365,7 +376,7 @@ def accept_first_job():
         screenshot_and_notify(message, screenshot_name, notify_admin)
     
     except Exception as e:
-        raise TemporaryError(f"Error during accept. Error: {e}")
+        raise TemporaryError(f"Error during job accept. Error: {e}")
 
 """
 Send message to users with job updates
@@ -486,18 +497,28 @@ Run a single session
 def run_session_impl():
     runs = 10
     for i in range(runs):
-        prepare_session(i)
+        # prepare_session(i)
         print(f"\n🔍 Starting job check {i+1}/{runs}")
-        jobs_found = parse_jobs() 
+        # jobs_found = parse_jobs() 
 
-        if jobs_found:
-            notify_of_jobs(jobs_found)
-            accept_first_job()
-        else:
-            find_confirmation_text("pds-message-info", "no jobs available")
+        jobs = set()
+
+        job = "| Monday09/08/2025 | 07:45 AM03:00 PM | MARLYCEPATINO | K-3 | MCKINLEY ELEMENTARY |  | "
         
-        print(f"💤 Waiting before next check...")
-        time.sleep(get_wait_time())  
+        print("Found job:", job)
+        jobs.add(job)
+        
+        accept_first_job(jobs)
+
+        # if jobs_found:
+        #     # notify_of_jobs(jobs_found)
+        #     accept_first_job(jobs_found)
+        # else:
+        #     find_confirmation_text("pds-message-info", "no jobs available")
+        
+        wait_time = get_wait_time()
+        print(f"Waiting {wait_time/60:.1f} minutes before next check...\n")
+        time.sleep(wait_time)  
     print(f"Completed {runs} runs.")
 
     destroy_driver()    # Fresh start
