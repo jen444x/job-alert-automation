@@ -371,21 +371,24 @@ def accept_first_job(jobs):
     job_list = list(jobs)
 
     for i, job in enumerate(job_list):
-        # Convert set to list so we can iterate in order
         print(f"Checking job {i+1}: {job}")
         
         # Check if this job should be skipped
-        
         # Check same-day jobs
         if BLOCK_SAME_DAY and date_today in job:
             notify_users(f"Skipped auto accept {i+1} - same day ({date_today})")
-            return
+            continue 
         
         # Check blocked dates
+        skip_job = False
         for blocked_date in BLOCKED_DATES:
             if blocked_date in job:
-                notify_users(f"Skipped auto accept {i+1} - blocked day ({date_today})")
-                return
+                notify_users(f"Skipped auto accept {i+1} - blocked day ({blocked_date})")
+                skip_job = True
+                break
+            
+        if skip_job:
+            continue 
         
         # If this job passes all filters, accept it
         print(f"Accepting job {i+1}")
@@ -522,24 +525,15 @@ Run a single session
 def run_session_impl():
     runs = 10
     for i in range(runs):
-        # prepare_session(i)
+        prepare_session(i)
         print(f"\n🔍 Starting job check {i+1}/{runs}")
-        # jobs_found = parse_jobs() 
+        jobs_found = parse_jobs() 
 
-        jobs = set()
-
-        job = "| Monday09/15/2025 | 07:45 AM03:00 PM | MARLYCEPATINO | K-3 | MCKINLEY ELEMENTARY |  | "
-        
-        print("Found job:", job)
-        jobs.add(job)
-        
-        accept_first_job(jobs)
-
-        # if jobs_found:
-        #     # notify_of_jobs(jobs_found)
-        #     accept_first_job(jobs_found)
-        # else:
-        #     find_confirmation_text("pds-message-info", "no jobs available")
+        if jobs_found:
+            notify_of_jobs(jobs_found)
+            accept_first_job(jobs_found)
+        else:
+            find_confirmation_text("pds-message-info", "no jobs available")
         
         wait_time = get_wait_time()
         print(f"Waiting {wait_time/60:.1f} minutes before next check...\n")
