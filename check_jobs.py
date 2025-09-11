@@ -5,7 +5,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import (
+    TimeoutException, NoSuchElementException)
 from dotenv import load_dotenv
 import os
 import time
@@ -25,11 +26,15 @@ SCHOOL_MIN, SCHOOL_MAX = 25, 70
 AFTER_SCHOOL_MIN, AFTER_SCHOOL_MAX = 25, 60  
 EVENING_MIN, EVENING_MAX = 30, 45  
 
-BLOCKED_DATES = [
+UNWANTED_DATES = [
     "09/15/2025"
 ]
 
 BLOCK_SAME_DAY = True  # Easy toggle
+
+UNWANTED_CLASSIFICATIONS = [
+    "imapired"
+]
 
 # Load credentials
 load_dotenv() 
@@ -52,6 +57,12 @@ class PermanentError(JobBotError):
 class TooManyFailuresError(PermanentError):
     """Too many retries = permanent failure"""
     pass
+
+# Local timezone
+local_tz = pytz.timezone('America/Los_Angeles')  # Pacific Time
+
+def get_now():
+    return datetime.datetime.now(local_tz)
 
 """
 Send Pushover notifications
@@ -111,7 +122,7 @@ def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin
     """Takes, sends, then deletes screenshot"""
     global driver
 
-    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
+    now = get_now()
     message += f"\n\n @ {now.strftime('%I:%M %p')}"
 
     driver.save_screenshot(screenshot_name)
@@ -124,7 +135,7 @@ Randomized wait times
 """
 def get_wait_time():
 
-    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
+    now = get_now()
     current_hour = now.hour
     
     print(f"Local time: {now.strftime('%I:%M %p')} (Hour: {current_hour})")
@@ -363,7 +374,7 @@ def click_confirm_accept():
 
 def accept_first_job(jobs):
     # Do not accept unwanted dates
-    now = datetime.datetime.now(pytz.timezone('America/Los_Angeles'))
+    now = get_now()
     date_today = now.strftime("%m/%d/%Y")
     print(date_today) 
 
@@ -379,17 +390,27 @@ def accept_first_job(jobs):
             notify_users(f"Skipped auto accept {i+1} - same day ({date_today})")
             continue 
         
-        # Check blocked dates
+        # Check unwanted dates
         skip_job = False
-        for blocked_date in BLOCKED_DATES:
-            if blocked_date in job:
-                notify_users(f"Skipped auto accept {i+1} - blocked day ({blocked_date})")
+        for unwanted_date in UNWANTED_DATES:
+            if unwanted_date in job:
+                notify_users(f"Skipped auto accept {i+1} - unwanted day ({unwanted_date})")
                 skip_job = True
                 break
             
         if skip_job:
             continue 
-        
+
+        # Check for unwanted classifications
+        for unwanted_classification in UNWANTED_CLASSIFICATIONS:
+            if unwanted_classification in job:
+                notify_users(f"Skipped auto accept {i+1} - unwanted classification ({unwanted_classification})")
+                skip_job = True
+                break
+            
+        if skip_job:
+            continue 
+
         # If this job passes all filters, accept it
         print(f"Accepting job {i+1}")
         try:
@@ -406,19 +427,23 @@ def accept_first_job(jobs):
         except Exception as e:
             raise TemporaryError(f"Error during job accept. Error: {e}")
 
-
-"""
-Send message to users with job updates
-"""
 def notify_of_jobs(current_jobs):
-    # Scroll to make sure job table is visible
-    job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
-    driver.execute_script("arguments[0].scrollIntoView(true);", job_table_element)
-    time.sleep(1)
+    """Send message to users with job updates"""
+    try: 
+        # Scroll to make sure job table is visible
+        job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
+        driver.execute_script("arguments[0].scrollIntoView(true);", job_table_element)
+        time.sleep(1)
 
-    message = f"New job(s) posted:\n\n" + "\n\n".join(current_jobs) 
-    screenshot_name = "job_found.png"
-    screenshot_and_notify(message, screenshot_name, notify_users)
+        message = f"New job(s) posted:\n\n" + "\n\n".join(current_jobs) 
+        screenshot_name = "job_found.png"
+        screenshot_and_notify(message, screenshot_name, notify_users)
+    except NoSuchElementException as e:
+        # Job table element not found - UI might have changed
+        raise PermanentError(f"Job table element not found - UI may have changed: {e}")
+    except Exception as e:
+        # Catch-all for unexpected errors
+        raise TemporaryError(f"Unexpected error in notify_of_jobs: {e}")
 
 def parse_jobs():
     global driver 
@@ -504,10 +529,10 @@ def logged_in():
     return False
 
 
-def prepare_session(i):
+def prepare_session(run):
     global driver
 
-    if (i == 0):
+    if (run == 0):
         create_driver()
         login()
     else:
