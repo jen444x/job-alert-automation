@@ -152,12 +152,15 @@ def dump_debug(tag="debug"):
 """
 Randomized wait times
 """
-def get_wait_time():
+def get_wait_time(current_hour=None):
 
     now = get_now()
-    current_hour = now.hour
+
+    if current_hour is None:
+        current_hour = now.hour
+    current_minute = now.minute
     
-    print(f"Local time: {now.strftime('%I:%M %p')} (Hour: {current_hour})")
+    print(f"Local time: {now.strftime('%I:%M %p')} (Current_hour: {current_hour})")
 
     # Early morning (5 AM to 9 AM) - most active
     if 5 <= current_hour < 9:
@@ -181,9 +184,28 @@ def get_wait_time():
     
     # Night (9 PM to 5 AM) - not active
     else:
-        print(f"Evening: checking every {NIGHT_MIN}-{NIGHT_MAX} minutes")
-        # Don't let it take up early morning time 
-        return random.randint(NIGHT_MIN * 60, NIGHT_MAX * 60)
+        print(f"Night: checking every {NIGHT_MIN}-{NIGHT_MAX} minutes")
+
+        wait_time = random.randint(NIGHT_MIN * 60, NIGHT_MAX * 60)
+
+        # If it's between 1 AM and 5 AM, check if wait would go past 5 AM
+        if 1 <= current_hour < 5:
+            # 5 AM = 300 minutes from midnight
+
+            curr_hour_in_mins = current_hour * 60 + current_minute
+
+            # Check if wait time will go into early morning time slot
+            
+            # 5 AM = 300 minutes from midnight
+            minutes_until_5am = 300 - curr_hour_in_mins
+
+            if wait_time > minutes_until_5am:
+                print(f"Wait would cross into early morning. Waiting {minutes_until_5am/60:.1f}")
+                print("minutes until 5 AM, then getting early morning wait time.")
+                # Add wait time from early morning slot
+                return minutes_until_5am + get_wait_time(5)
+
+        return wait_time
 
 """
 Try an action with retry on failure
@@ -281,6 +303,7 @@ def login():
         username_field.send_keys(USERNAME)
         password_field.send_keys(PASSWORD + Keys.RETURN)
 
+        time.sleep(2)  
         # Wait for successful login - job-search element should appear
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.ID, "job-search"))
@@ -439,6 +462,7 @@ def accept_first_job(jobs):
         print(f"Accepting job {i+1}")
         try:
             click_accept(i)  # click the accept button for job at index i
+            time.sleep(5)  # Give time for confirmation dialog
             click_confirm_accept()
             confirm_job_accept()
 
@@ -456,7 +480,7 @@ def notify_of_jobs(current_jobs):
         # Scroll to make sure job table is visible
         job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
         driver.execute_script("arguments[0].scrollIntoView(true);", job_table_element)
-        time.sleep(1)
+        time.sleep(3)
 
         message = f"New job(s) posted:\n\n" + "\n\n".join(current_jobs) 
         screenshot_name = "job_found.png"
@@ -545,10 +569,12 @@ def driver_is_alive():
 def logged_in():
     try:    
         driver.refresh()
+        time.sleep(3)  
     except Exception as e:
         print(f"Failed to refresh page on logged_in(): {e}")  
         # Try to recreat driver to work  
         create_driver()
+        return False
 
     try:    
         WebDriverWait(driver, 20).until(
