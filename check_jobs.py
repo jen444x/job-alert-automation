@@ -19,12 +19,12 @@ import pytz
 # Initialize driver variable
 driver = None  
 
-# Configurable time ranges (in minutes)
-SLEEP_MIN, SLEEP_MAX = 180, 210          
-EARLY_MIN, EARLY_MAX = 10, 30      
-SCHOOL_MIN, SCHOOL_MAX = 5, 34   
-AFTER_SCHOOL_MIN, AFTER_SCHOOL_MAX = 25, 60  
-EVENING_MIN, EVENING_MAX = 30, 45  
+# Configurable time ranges (in minutes)  
+EARLY_MORN_MIN, EARLY_MORN_MAX = 5, 25   
+LATE_MORN_MIN, LATE_MORN_MAX = 5, 25        
+NOON_MIN, NOON_MAX = 25, 60
+EVENING_MIN, EVENING_MAX = 25, 60  
+NIGHT_MIN, NIGHT_MAX = 90, 270  
 
 UNWANTED_DATES = [
     "09/15/2025"
@@ -158,31 +158,32 @@ def get_wait_time():
     current_hour = now.hour
     
     print(f"Local time: {now.strftime('%I:%M %p')} (Hour: {current_hour})")
+
+    # Early morning (5 AM to 9 AM) - most active
+    if 5 <= current_hour < 9:
+        print(f"Early morning: checking every {EARLY_MORN_MIN}-{EARLY_MORN_MAX} minutes")
+        return random.randint(EARLY_MORN_MIN * 60, EARLY_MORN_MAX * 60)
     
-    # Late night (11 PM to 5 AM) - sleep mode
-    if current_hour >= 23 or current_hour < 5:
-        print(f"Sleep mode: checking every {SLEEP_MIN}-{SLEEP_MAX} minutes")
-        return random.randint(SLEEP_MIN * 60, SLEEP_MAX * 60)
+    # Late morning (9 AM to 12 PM) - somewhat active
+    elif 9 <= current_hour < 12:
+        print(f"Late morning: checking every {LATE_MORN_MIN}-{LATE_MORN_MAX} minutes")
+        return random.randint(LATE_MORN_MIN * 60, LATE_MORN_MAX * 60)
     
-    # Early morning (5 AM to 8 AM) - light activity
-    elif 5 <= current_hour < 8:
-        print(f"Early morning: checking every {EARLY_MIN}-{EARLY_MAX} minutes")
-        return random.randint(EARLY_MIN * 60, EARLY_MAX * 60)
+    # Noon (12 PM to 6 PM) - not active
+    elif 12 <= current_hour < 18:
+        print(f"Noon: checking every {NOON_MIN}-{NOON_MAX} minutes")
+        return random.randint(NOON_MIN * 60, NOON_MAX * 60)
     
-    # School hours (8 AM to 4 PM) - most active
-    elif 8 <= current_hour < 16:
-        print(f"School hours: checking every {SCHOOL_MIN}-{SCHOOL_MAX} minutes")
-        return random.randint(SCHOOL_MIN * 60, SCHOOL_MAX * 60)
-    
-    # After school (4 PM to 8 PM) - very active
-    elif 16 <= current_hour < 20:
-        print(f"After school: checking every {AFTER_SCHOOL_MIN}-{AFTER_SCHOOL_MAX} minutes")
-        return random.randint(AFTER_SCHOOL_MIN * 60, AFTER_SCHOOL_MAX * 60)
-    
-    # Evening (8 PM to 11 PM) - moderate
-    else:
+    # Evening (6 PM to 9 PM) - most active
+    elif 18 <= current_hour < 21:
         print(f"Evening: checking every {EVENING_MIN}-{EVENING_MAX} minutes")
         return random.randint(EVENING_MIN * 60, EVENING_MAX * 60)
+    
+    # Night (9 PM to 5 AM) - not active
+    else:
+        print(f"Evening: checking every {NIGHT_MIN}-{NIGHT_MAX} minutes")
+        # Don't let it take up early morning time 
+        return random.randint(NIGHT_MIN * 60, NIGHT_MAX * 60)
 
 """
 Try an action with retry on failure
@@ -386,7 +387,7 @@ def click_confirm_accept():
     # Using WebDriverWait since page changed after click accept
     global driver
     try:
-        confirm_btn = WebDriverWait(driver, 30).until(
+        confirm_btn = WebDriverWait(driver, 45).until(
             EC.element_to_be_clickable((By.ID, "confirm-dialog"))
         )
         confirm_btn.click()
@@ -409,14 +410,14 @@ def accept_first_job(jobs):
         
         # Check if this job should be skipped
         # Check same-day jobs
-        if BLOCK_SAME_DAY and date_today in job:
+        if BLOCK_SAME_DAY and date_today in job.lower():
             notify_users(f"Skipped auto accept {i+1} - same day ({date_today})")
             continue 
         
         # Check unwanted dates
         skip_job = False
         for unwanted_date in UNWANTED_DATES:
-            if unwanted_date in job:
+            if unwanted_date in job.lower():
                 notify_users(f"Skipped auto accept {i+1} - unwanted day ({unwanted_date})")
                 skip_job = True
                 break
@@ -426,7 +427,7 @@ def accept_first_job(jobs):
 
         # Check for unwanted classifications
         for unwanted_classification in UNWANTED_CLASSIFICATIONS:
-            if unwanted_classification in job:
+            if unwanted_classification in job.lower():
                 notify_users(f"Skipped auto accept {i+1} - unwanted classification ({unwanted_classification})")
                 skip_job = True
                 break
@@ -438,7 +439,6 @@ def accept_first_job(jobs):
         print(f"Accepting job {i+1}")
         try:
             click_accept(i)  # click the accept button for job at index i
-            time.sleep(5)
             click_confirm_accept()
             confirm_job_accept()
 
