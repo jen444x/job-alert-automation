@@ -20,9 +20,9 @@ import pytz
 driver = None  
 
 # Configurable time ranges (in minutes)
-SLEEP_MIN, SLEEP_MAX = 180, 210          # 3-3.5 hours
+SLEEP_MIN, SLEEP_MAX = 180, 210          
 EARLY_MIN, EARLY_MAX = 10, 30      
-SCHOOL_MIN, SCHOOL_MAX = 25, 70       
+SCHOOL_MIN, SCHOOL_MAX = 5, 34   
 AFTER_SCHOOL_MIN, AFTER_SCHOOL_MAX = 25, 60  
 EVENING_MIN, EVENING_MAX = 30, 45  
 
@@ -128,6 +128,25 @@ def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin
     driver.save_screenshot(screenshot_name)
     notify_function(message, screenshot_name)  # This calls whatever function you passed in
     os.remove(screenshot_name)
+
+def dump_debug(tag="debug"):
+    global driver
+    timestamp = int(time.time())
+    try:
+        # Save HTML
+        html_path = f"page_{tag}_{timestamp}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        print(f"Saved HTML: {html_path}")
+
+        # Save screenshot
+        png_path = f"page_{tag}_{timestamp}.png"
+        driver.save_screenshot(png_path)
+        print(f"Saved screenshot: {png_path}")
+
+    except Exception as e:
+        print(f"Failed to dump debug info: {e}")
+
 
 
 """
@@ -237,8 +256,6 @@ def destroy_driver():
         driver = None
 
 def login():
-    global driver
-
     # Get necessary env vars
     USERNAME = os.getenv("PORTAL_USERNAME")
     PASSWORD = os.getenv("PORTAL_PASSWORD")
@@ -346,7 +363,7 @@ def click_accept(job_index=0):
 
     if not accept_buttons:
         notify_admin(f"Failed to accept - accept buttons were not found. Trying again")
-        raise TemporaryError("Accept buttons missing")  # Will retry
+        raise TemporaryError("Accept buttons missing")  
     
     if job_index >= len(accept_buttons):
         raise TemporaryError(f"Job index {job_index} out of range - only {len(accept_buttons)} jobs available")
@@ -358,6 +375,12 @@ def click_accept(job_index=0):
         raise TemporaryError(f"Accept button {job_index} is not active.")
 
     driver.execute_script("arguments[0].click();", button)
+
+    try:
+        driver.execute_script("arguments[0].click();", button)
+        print("JavaScript click executed successfully")
+    except Exception as e:
+        raise TemporaryError(f"Unexpected error during accept job click: {e}")
     
 def click_confirm_accept():
     # Using WebDriverWait since page changed after click accept
@@ -447,12 +470,18 @@ def notify_of_jobs(current_jobs):
 
 def parse_jobs():
     global driver 
-
-    # refresh page before check
+    
     try:
-        driver.refresh()
+        # Wait up to 50 seconds for dashboard to load
+        WebDriverWait(driver, 50).until(
+            EC.presence_of_element_located((By.ID, "job-search"))  
+        )
+    except TimeoutException as e:
+        dump_debug("no_jobsearch")  # <-- save HTML for debugging
+        raise TemporaryError(f"Timeout: job-search not found after refresh: {e}")
     except Exception as e:
-        raise TemporaryError(f"Failed to refresh page: {e}")
+        dump_debug("other_error")
+        raise TemporaryError(f"Unexpected error while waiting for job-search: {e}")
     
     # Wait for and click the Available Jobs tab
     try:
@@ -514,7 +543,12 @@ def driver_is_alive():
         return False
     
 def logged_in():
-    global driver
+    try:    
+        driver.refresh()
+    except Exception as e:
+        print(f"Failed to refresh page on logged_in(): {e}")  
+        # Try to recreat driver to work  
+        create_driver()
 
     try:    
         WebDriverWait(driver, 20).until(
