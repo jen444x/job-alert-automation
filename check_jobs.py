@@ -22,8 +22,8 @@ driver = None
 # Configurable time ranges (in minutes)  
 EARLY_MORN_MIN, EARLY_MORN_MAX = 5, 25   
 LATE_MORN_MIN, LATE_MORN_MAX = 5, 25        
-NOON_MIN, NOON_MAX = 25, 60
-EVENING_MIN, EVENING_MAX = 25, 60  
+NOON_MIN, NOON_MAX = 2, 5
+EVENING_MIN, EVENING_MAX = 2, 5 
 NIGHT_MIN, NIGHT_MAX = 90, 270  
 
 UNWANTED_DATES = [
@@ -33,7 +33,7 @@ UNWANTED_DATES = [
 BLOCK_SAME_DAY = True  # Easy toggle
 
 UNWANTED_CLASSIFICATIONS = [
-    "imapired"
+    "impaired"
 ]
 
 # Load credentials
@@ -513,19 +513,32 @@ def parse_jobs():
                 EC.element_to_be_clickable((By.ID, "available-tab"))
             )
         available_tab.click()
+        time.sleep(10) # Wait a bit for content to load
+        screenshot_and_notify("after click()", "click()")
     except Exception as e:
         raise TemporaryError(f"Failed to click available tab: {e}")
-        
-    # Wait for job table 
-    try: 
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.ID, os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")))
+
+    # Wait for job table rows or no jobs available message
+    WebDriverWait(driver, 30).until(
+    lambda d: (
+        len(d.find_elements(By.CSS_SELECTOR, "#parent-table-desktop-available tr")) > 1
+        or len(d.find_elements(By.CSS_SELECTOR, "#available-panel .pds-message-info")) > 0
         )
-    except Exception as e:
-        raise TemporaryError(f"Failed to find job table: {e}")  
+    )
+    time.sleep(1)
+    
+    # # Wait for job table 
+    # try: 
+    #     WebDriverWait(driver, 30).until(
+    #         EC.presence_of_element_located((By.ID, os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")))
+    #     )
+    #     screenshot_and_notify("after waiting for jobtableid()", "waiting for jobtableid()")
+    # except Exception as e:
+    #     raise TemporaryError(f"Failed to find job table: {e}")  
 
     # Get full page content 
     try:
+        screenshot_and_notify("after find job table()", "find job table()")
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
     except Exception as e:
@@ -613,12 +626,16 @@ def run_session_impl():
         prepare_session(i)
         print(f"\n🔍 Starting job check {i+1}/{runs}")
         jobs_found = parse_jobs() 
+        screenshot_and_notify("after parse_jobs()", "parse_jobs()")
 
         if jobs_found:
             notify_of_jobs(jobs_found)
+            screenshot_and_notify("after notify_of_jobs()", "notify_of_jobs()")
             accept_first_job(jobs_found)
+            screenshot_and_notify("after accept_first_job()", "accept_first_job()")
         else:
             find_confirmation_text("pds-message-info", "no jobs available")
+            screenshot_and_notify("after find_confirmation_text()", "parse_jobs()")
         
         wait_time = get_wait_time()
         print(f"Waiting {wait_time/60:.1f} minutes before next check...\n")
