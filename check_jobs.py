@@ -249,6 +249,7 @@ def create_driver():
     options.add_argument("--headless=new")  # Runs the browser without a GUI window
     options.add_argument("--no-sandbox") # Disables the browser’s “sandbox” security feature
     options.add_argument("--disable-dev-shm-usage") # Prevents Chrome from using /dev/shm (shared memory)
+    options.add_argument("--user-data-dir=/tmp/chrome_jobbot")  # put temp folders in /tmp/chrome_jobbot
     
     # Anti-detection options
     options.add_argument("--disable-blink-features=AutomationControlled")  # Removes navigator.webdriver flag
@@ -269,12 +270,23 @@ def create_driver():
 def destroy_driver():
     global driver
 
-    # Clean up current driver if alive
     try:
-        driver.current_url # If driver is dead, will fail
-        driver.quit()
-    except:
-        pass  
+        # Check if driver exists and close it
+        if driver:
+            driver.current_url  # Test if driver is alive
+            driver.quit()
+            print("Chrome browser closed")
+            
+        # Clean up Chrome's temp directory
+        import shutil
+        shutil.rmtree("/tmp/chrome_jobbot", ignore_errors=True)
+        print("Cleaned up Chrome temp directory")
+        
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+        # Still try to clean up temp directory even if driver.quit() failed
+        import shutil
+        shutil.rmtree("/tmp/chrome_jobbot", ignore_errors=True)
     finally:
         driver = None
 
@@ -514,7 +526,7 @@ def parse_jobs():
             )
         available_tab.click()
         time.sleep(10) # Wait a bit for content to load
-        screenshot_and_notify("after click()", "click()")
+        screenshot_and_notify("after click()", "click.png")
     except Exception as e:
         raise TemporaryError(f"Failed to click available tab: {e}")
 
@@ -538,7 +550,7 @@ def parse_jobs():
 
     # Get full page content 
     try:
-        screenshot_and_notify("after find job table()", "find job table()")
+        screenshot_and_notify("after find job table()", "find job table.png")
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
     except Exception as e:
@@ -626,16 +638,16 @@ def run_session_impl():
         prepare_session(i)
         print(f"\n🔍 Starting job check {i+1}/{runs}")
         jobs_found = parse_jobs() 
-        screenshot_and_notify("after parse_jobs()", "parse_jobs()")
+        screenshot_and_notify("after parse_jobs()", "parse_jobs.png")
 
         if jobs_found:
             notify_of_jobs(jobs_found)
-            screenshot_and_notify("after notify_of_jobs()", "notify_of_jobs()")
+            screenshot_and_notify("after notify_of_jobs()", "notify_of_jobs.png")
             accept_first_job(jobs_found)
-            screenshot_and_notify("after accept_first_job()", "accept_first_job()")
+            screenshot_and_notify("after accept_first_job()", "accept_first_job.png")
         else:
             find_confirmation_text("pds-message-info", "no jobs available")
-            screenshot_and_notify("after find_confirmation_text()", "parse_jobs()")
+            screenshot_and_notify("after find_confirmation_text()", "parse_jobs.png")
         
         wait_time = get_wait_time()
         print(f"Waiting {wait_time/60:.1f} minutes before next check...\n")
