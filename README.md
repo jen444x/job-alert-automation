@@ -50,7 +50,6 @@ Developed an automated monitoring system that tracks job listings on a web porta
 The system follows a modular design pattern:
 
 - **Main Monitor** (`check_jobs.py`) - Core automation logic with continuous monitoring
-- **Notification Service** (`send_message.py`) - Standalone notification testing utility
 - **Configuration Management** - Environment-based credential handling
 
 ## Setup and Installation
