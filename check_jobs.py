@@ -1,7 +1,5 @@
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
@@ -13,11 +11,9 @@ from bs4 import BeautifulSoup
 
 from error_handling import (TemporaryError, PermanentError, TooManyFailuresError)
 from error_handling import retry_on_failure
+from driver_manager import (driver, driver_is_alive, destroy_driver, create_driver)
 from timing import get_now, get_wait_time
 from notifications import notify_admin, notify_users
-
-# Initialize driver variable
-driver = None  
 
 UNWANTED_DATES = [
     "09/15/2025"
@@ -34,7 +30,6 @@ load_dotenv()
 
 def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin):
     """Takes, sends, then deletes screenshot"""
-    global driver
 
     now = get_now()
     message += f"\n\n @ {now.strftime('%I:%M %p')}"
@@ -44,7 +39,6 @@ def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin
     os.remove(screenshot_name)
 
 def dump_debug(tag="debug"):
-    global driver
     timestamp = int(time.time())
     try:
         # Save HTML
@@ -60,61 +54,6 @@ def dump_debug(tag="debug"):
 
     except Exception as e:
         print(f"Failed to dump debug info: {e}")
-
-"""
-Handle drivers
-"""
-def create_driver():
-    global driver
-
-    # Clean up any existing driver first
-    destroy_driver()    
-
-    # Selenium config
-    options = Options() # Creates an empty ChromeOptions object. This will store settings for Selenium
-    options.add_argument("--headless=new")  # Runs the browser without a GUI window
-    options.add_argument("--no-sandbox") # Disables the browser’s “sandbox” security feature
-    options.add_argument("--disable-dev-shm-usage") # Prevents Chrome from using /dev/shm (shared memory)
-    options.add_argument("--user-data-dir=/tmp/chrome_jobbot")  # put temp folders in /tmp/chrome_jobbot
-    
-    # Anti-detection options
-    options.add_argument("--disable-blink-features=AutomationControlled")  # Removes navigator.webdriver flag
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Removes automation indicators
-    options.add_experimental_option('useAutomationExtension', False)  # Disables Chrome automation extension
-    
-    print("configured selenium\n")
-        
-    try:        
-        # Set up WebDriver
-        driver = webdriver.Chrome(options=options)
-        print("Set up webdrive\n")
-
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    except Exception as e:
-        raise TemporaryError(f"Failed to create driver: {e}")
-    
-def destroy_driver():
-    global driver
-
-    try:
-        # Check if driver exists and close it
-        if driver:
-            driver.current_url  # Test if driver is alive
-            driver.quit()
-            print("Chrome browser closed")
-            
-        # Clean up Chrome's temp directory
-        import shutil
-        shutil.rmtree("/tmp/chrome_jobbot", ignore_errors=True)
-        print("Cleaned up Chrome temp directory")
-        
-    except Exception as e:
-        print(f"Error during cleanup: {e}")
-        # Still try to clean up temp directory even if driver.quit() failed
-        import shutil
-        shutil.rmtree("/tmp/chrome_jobbot", ignore_errors=True)
-    finally:
-        driver = None
 
 def login():
     # Get necessary env vars
@@ -164,8 +103,6 @@ def login():
 Find confirmation message 
 """
 def find_confirmation_text(class_name, text):
-    global driver
-
     # Wait to see if message appears
     # if this method doesnt work switch to other
     try:
@@ -246,7 +183,6 @@ def click_accept(job_index=0):
     
 def click_confirm_accept():
     # Using WebDriverWait since page changed after click accept
-    global driver
     try:
         confirm_btn = WebDriverWait(driver, 45).until(
             EC.element_to_be_clickable((By.ID, "confirm-dialog"))
@@ -331,8 +267,6 @@ def notify_of_jobs(current_jobs):
         raise TemporaryError(f"Unexpected error in notify_of_jobs: {e}")
 
 def parse_jobs():
-    global driver 
-    
     try:
         # Wait up to 50 seconds for dashboard to load
         WebDriverWait(driver, 50).until(
@@ -364,15 +298,6 @@ def parse_jobs():
         )
     )
     time.sleep(1)
-    
-    # # Wait for job table 
-    # try: 
-    #     WebDriverWait(driver, 30).until(
-    #         EC.presence_of_element_located((By.ID, os.getenv("JOB_TABLE_ID", "parent-table-desktop-available")))
-    #     )
-    #     screenshot_and_notify("after waiting for jobtableid()", "waiting for jobtableid()")
-    # except Exception as e:
-    #     raise TemporaryError(f"Failed to find job table: {e}")  
 
     # Get full page content 
     try:
@@ -408,17 +333,6 @@ def parse_jobs():
             jobs.add(job)
     
     return jobs
-
-def driver_is_alive():
-    try:
-        if driver:
-            driver.current_url  # This will fail if Chrome was killed
-            driver.refresh()
-            time.sleep(5)
-            return True
-        return False
-    except:
-        return False
     
 def logged_in():
     try:    
@@ -433,10 +347,7 @@ def logged_in():
         print(f"Other error occurred: {e}")    
     return False
 
-
 def prepare_session(run):
-    global driver
-
     if (run == 0):
         create_driver()
         login()
@@ -444,6 +355,9 @@ def prepare_session(run):
     # Make sure session is ready
     if not driver_is_alive():
         create_driver()
+    else:
+        driver.refresh()
+        time.sleep(5)
 
     if not logged_in():
         login()
@@ -491,6 +405,6 @@ if __name__ == "__main__":
     except Exception as e:
         notify_admin(f"Fatal error. Job bot crashed: {e}")
     finally:
-        if 'driver' in globals() and driver:
+        if driver:
             driver.quit()
             print("Browser cleaned up")
