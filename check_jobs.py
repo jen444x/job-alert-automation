@@ -1,7 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,11 +10,11 @@ from dotenv import load_dotenv
 import os
 import time
 from bs4 import BeautifulSoup
-import requests
 
-from timing import get_now, get_wait_time
 from error_handling import (TemporaryError, PermanentError, TooManyFailuresError)
 from error_handling import retry_on_failure
+from timing import get_now, get_wait_time
+from notifications import notify_admin, notify_users
 
 # Initialize driver variable
 driver = None  
@@ -32,60 +31,6 @@ UNWANTED_CLASSIFICATIONS = [
 
 # Load credentials
 load_dotenv() 
-
-"""
-Send Pushover notifications
-"""
-PRODUCTION_USERS = [
-    os.getenv("ADMIN_USER_1"),    
-    os.getenv("PRODUCTION_USER_1")   
-]
-
-ADMIN_USERS = [
-    os.getenv("ADMIN_USER_1")
-]
-
-def send_notification(users, message, screenshot_path=None):
-    """Sends notifications with optional screenshot"""
-    print("Sending message to user: ")
-    print(f"{message}\n\n")
-
-    image_file = None
-
-    if screenshot_path:
-        try:
-            image_file = open(screenshot_path, 'rb')
-        except Exception as e:
-            print(f"Failed to open screenshot {screenshot_path}: {e}")
-            print(f"Will only send text.")
-    try:
-        for recipient in users:
-            try:
-                payload = {
-                    "token": os.getenv("PUSHOVER_API_TOKEN"),
-                    "user": recipient,
-                    "message": message,
-                }
-
-                files = None
-                if image_file:
-                    files = {"attachment": image_file}
-                
-                response = requests.post("https://api.pushover.net/1/messages.json", 
-                                        data=payload, files=files)
-                response.raise_for_status()
-                print(f"Sent notification to {recipient}")
-            except Exception as e:
-                print(f"Failed to send notification to {recipient}:", e)
-    finally:
-        if image_file:
-            image_file.close()
-
-def notify_admin(message, screenshot_path=None):
-    send_notification(ADMIN_USERS, message, screenshot_path)
-
-def notify_users(message, screenshot_path=None):
-    send_notification(PRODUCTION_USERS, message, screenshot_path)
 
 def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin):
     """Takes, sends, then deletes screenshot"""
@@ -468,20 +413,14 @@ def driver_is_alive():
     try:
         if driver:
             driver.current_url  # This will fail if Chrome was killed
+            driver.refresh()
+            time.sleep(5)
             return True
+        return False
     except:
         return False
     
 def logged_in():
-    try:    
-        driver.refresh()
-        time.sleep(3)  
-    except Exception as e:
-        print(f"Failed to refresh page on logged_in(): {e}")  
-        # Try to recreat driver to work  
-        create_driver()
-        return False
-
     try:    
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.ID, "job-search"))
@@ -501,16 +440,13 @@ def prepare_session(run):
     if (run == 0):
         create_driver()
         login()
-    else:
-        if driver_is_alive:
-            driver.refresh()
-        # Make sure driver is alive
-        else:
-            create_driver()
 
-        # Make sure logged in
-        if not logged_in():
-            login()
+    # Make sure session is ready
+    if not driver_is_alive():
+        create_driver()
+
+    if not logged_in():
+        login()
 
 """
 Run a single session
@@ -538,7 +474,6 @@ def run_session_impl():
     print(f"Completed {runs} runs.")
 
     destroy_driver()    # Fresh start
-
 
 def run_session():            
     return retry_on_failure(run_session_impl)
