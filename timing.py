@@ -57,17 +57,17 @@ def get_wait_time(current_hour=None):
         if 1 <= current_hour < 5:
             # 5 AM = 300 minutes from midnight
 
-            curr_hour_in_mins = current_hour * 60 + current_minute
+            curr_time_in_secs = (current_hour * 60 + current_minute) * 60
 
             # Check if wait time will go into early morning time slot
             
             # 5 AM = 300 minutes from midnight
-            minutes_until_5am = 300 - curr_hour_in_mins
+            secs_until_5am = (300 * 60) - curr_time_in_secs
 
-            if wait_time > minutes_until_5am:
-                print(f"Wait would cross into early morning. Waiting {minutes_until_5am/60:.1f}")
+            if wait_time > secs_until_5am:
+                print(f"Wait would cross into early morning. Waiting {secs_until_5am/60:.1f}")
                 print("minutes until 5 AM, then getting early morning wait time.")
                 # Add wait time from early morning slot
-                return minutes_until_5am + get_wait_time(5)
+                return secs_until_5am + get_wait_time(5)
 
         return wait_time
