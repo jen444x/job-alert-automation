@@ -268,8 +268,8 @@ def notify_of_jobs(current_jobs):
 
 def parse_jobs():
     try:
-        # Wait up to 50 seconds for dashboard to load
-        WebDriverWait(driver, 50).until(
+        # Wait up to 30 seconds for dashboard to load
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.ID, "job-search"))  
         )
     except TimeoutException as e:
@@ -297,7 +297,6 @@ def parse_jobs():
         or len(d.find_elements(By.CSS_SELECTOR, "#available-panel .pds-message-info")) > 0
         )
     )
-    time.sleep(1)
 
     # Get full page content 
     try:
@@ -343,9 +342,10 @@ def logged_in():
         return True
     except TimeoutException:
         print("Job search element not found - likely logged out")
+        return False
     except Exception as e:
-        print(f"Other error occurred: {e}")    
-    return False
+        print(f"Other error occurred: {e}") 
+        raise TemporaryError(f"Unexpected error during logged_in(). Error: {e}")   
 
 def prepare_session(run):
     if (run == 0):
@@ -406,5 +406,5 @@ if __name__ == "__main__":
         notify_admin(f"Fatal error. Job bot crashed: {e}")
     finally:
         if driver:
-            driver.quit()
+            destroy_driver()
             print("Browser cleaned up")
