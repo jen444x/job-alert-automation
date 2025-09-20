@@ -1,7 +1,13 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from error_handling import TemporaryError
+from selenium.common.exceptions import WebDriverException 
+
 driver = None
+
+def get_driver():
+    # Get the current driver instance
+    return driver
 
 def driver_is_alive():
     try:
@@ -60,5 +66,6 @@ def create_driver():
         print("Set up webdrive\n")
 
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
     except Exception as e:
         raise TemporaryError(f"Failed to create driver: {e}")

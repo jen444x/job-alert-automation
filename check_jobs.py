@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 from error_handling import (TemporaryError, PermanentError, TooManyFailuresError)
 from error_handling import retry_on_failure
-from driver_manager import (driver, driver_is_alive, destroy_driver, create_driver)
+from driver_manager import (get_driver, driver_is_alive, destroy_driver, create_driver)
 from timing import get_now, get_wait_time
 from notifications import notify_admin, notify_users
 
@@ -34,12 +34,13 @@ def screenshot_and_notify(message, screenshot_name, notify_function=notify_admin
     now = get_now()
     message += f"\n\n @ {now.strftime('%I:%M %p')}"
 
-    driver.save_screenshot(screenshot_name)
+    get_driver().save_screenshot(screenshot_name)
     notify_function(message, screenshot_name)  # This calls whatever function you passed in
     os.remove(screenshot_name)
 
 def dump_debug(tag="debug"):
     timestamp = int(time.time())
+    driver = get_driver()
     try:
         # Save HTML
         html_path = f"page_{tag}_{timestamp}.html"
@@ -64,7 +65,8 @@ def login():
     # Make sure I have them
     if not USERNAME or not PASSWORD or not PORTAL_URL:
         raise PermanentError("Missing required environment variables (PORTAL_USERNAME, PORTAL_PASSWORD, or PORTAL_URL)")
-
+    
+    driver = get_driver()
     try: 
         # Go to login URL
         driver.get(PORTAL_URL)
@@ -106,7 +108,7 @@ def find_confirmation_text(class_name, text):
     # Wait to see if message appears
     # if this method doesnt work switch to other
     try:
-        WebDriverWait(driver, 30).until(
+        WebDriverWait(get_driver(), 30).until(
             EC.text_to_be_present_in_element(
                 (By.CLASS_NAME, class_name), text
             )
@@ -124,7 +126,7 @@ def find_confirmation_text(class_name, text):
 
 def get_buttons(class_name):
     try:
-        buttons = driver.find_elements(By.CLASS_NAME, class_name)
+        buttons = get_driver().find_elements(By.CLASS_NAME, class_name)
 
         if not buttons:
             print("No accept buttons were found")
@@ -172,7 +174,8 @@ def click_accept(job_index=0):
     if not button.is_displayed() or not button.is_enabled():
         print(f"Button {job_index} is found but not active")
         raise TemporaryError(f"Accept button {job_index} is not active.")
-
+    
+    driver = get_driver()
     driver.execute_script("arguments[0].click();", button)
 
     try:
@@ -184,7 +187,7 @@ def click_accept(job_index=0):
 def click_confirm_accept():
     # Using WebDriverWait since page changed after click accept
     try:
-        confirm_btn = WebDriverWait(driver, 45).until(
+        confirm_btn = WebDriverWait(get_driver(), 45).until(
             EC.element_to_be_clickable((By.ID, "confirm-dialog"))
         )
         confirm_btn.click()
@@ -250,6 +253,7 @@ def accept_first_job(jobs):
 
 def notify_of_jobs(current_jobs):
     """Send message to users with job updates"""
+    driver = get_driver()
     try: 
         # Scroll to make sure job table is visible
         job_table_element = driver.find_element(By.ID, "parent-table-desktop-available")
@@ -267,6 +271,7 @@ def notify_of_jobs(current_jobs):
         raise TemporaryError(f"Unexpected error in notify_of_jobs: {e}")
 
 def parse_jobs():
+    driver = get_driver()
     try:
         # Wait up to 30 seconds for dashboard to load
         WebDriverWait(driver, 30).until(
@@ -335,7 +340,7 @@ def parse_jobs():
     
 def logged_in():
     try:    
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(get_driver(), 20).until(
             EC.presence_of_element_located((By.ID, "job-search"))
         )
 
@@ -356,7 +361,7 @@ def prepare_session(run):
     if not driver_is_alive():
         create_driver()
     else:
-        driver.refresh()
+        get_driver().refresh()
         time.sleep(5)
 
     if not logged_in():
@@ -405,6 +410,5 @@ if __name__ == "__main__":
     except Exception as e:
         notify_admin(f"Fatal error. Job bot crashed: {e}")
     finally:
-        if driver:
-            destroy_driver()
-            print("Browser cleaned up")
+        destroy_driver()
+        print("Browser cleaned up")
