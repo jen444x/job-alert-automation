@@ -1,4 +1,4 @@
-[# Automated Job Monitoring System
+# Automated Job Monitoring System
 
 A Python-based web automation tool that monitors job postings and sends real-time notifications when new opportunities become available.
 
@@ -87,4 +87,4 @@ The system follows a modular design pattern:
 - **Security Practices** - Secure credential management and environment isolation
 - **Problem Solving** - Automated solution for time-sensitive data monitoring
 - **Code Organization** - Modular design with separation of concerns
-](https://github.com/jen444x/jen444x.github.io)
+(https://github.com/jen444x/jen444x.github.io)
