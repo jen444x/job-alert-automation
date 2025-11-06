@@ -1,90 +1,419 @@
-# Automated Job Monitoring System
+# Job Alert Automation
 
-A Python-based web automation tool that monitors job postings and sends real-time notifications when new opportunities become available.
+ 
 
-## Project Overview
+A production-ready Python bot that monitors job portals 24/7, sends instant push notifications when jobs appear, and automatically accepts suitable positions based on configurable filters.
 
-Developed an automated monitoring system that tracks job listings on a web portal and provides instant notifications. The system runs continuously on cloud infrastructure and demonstrates proficiency in web automation, API integration, and production deployment.
+ 
 
-## Technical Implementation
+## Overview
 
-### Web Automation & Data Extraction
+ 
 
-- **Selenium WebDriver**: Automates browser interactions and form submissions
-- **BeautifulSoup4**: Parses HTML and extracts structured data from web tables
-- **Headless Browser**: Runs efficiently without GUI for server deployment
+This system automates the entire job hunting workflow:
 
-### Real-time Notification System
+- Continuously monitors a job portal using browser automation
 
-- **Push Notifications**: Integrates with Pushover API for reliable message delivery
-- **Duplicate Detection**: Implements intelligent filtering to prevent redundant alerts
-- **Error Handling**: Comprehensive exception management with debugging capabilities
+- Sends real-time push notifications with screenshots when new jobs are posted
 
-### Production Infrastructure
+- Automatically accepts the first job that passes filter criteria
 
-- **Cloud Hosting**: Deployed on Digital Ocean for 24/7 availability
-- **Environment Security**: Secure credential management using environment variables
-- **Resource Optimization**: Configured for minimal server resource usage
+- Runs indefinitely on cloud infrastructure with intelligent time-based scheduling
 
-## Key Technical Features
-
-- Automated form filling and navigation
-- Dynamic content parsing and data extraction
-- RESTful API integration for notifications
-- Session management and error recovery
-- Production-ready cloud deployment
-- Comprehensive logging and debugging
-
-## Technology Stack
-
-- **Python 3.x** - Core application development
-- **Selenium** - Web browser automation framework
-- **BeautifulSoup4** - HTML parsing and data extraction
-- **Requests** - HTTP client for API communications
-- **Python-dotenv** - Configuration management
-- **Digital Ocean** - Cloud hosting platform
-- **Chromium** - Headless browser engine
+ 
 
 ## Architecture
 
-The system follows a modular design pattern:
+ 
 
-- **Main Monitor** (`check_jobs.py`) - Core automation logic with continuous monitoring
-- **Configuration Management** - Environment-based credential handling
+The system follows a clean, modular design with clear separation of concerns:
+
+ 
+
+```
+
+check_jobs.py          → Main controller (login, parsing, job acceptance)
+
+driver_manager.py      → WebDriver lifecycle management
+
+notifications.py       → Pushover API integration
+
+timing.py              → Time-aware scheduling logic
+
+error_handling.py      → Exception hierarchy and retry mechanism
+
+```
+
+ 
+
+### Module Details
+
+ 
+
+**check_jobs.py** (Main Controller)
+
+- `login()` - Authenticates with portal credentials
+
+- `parse_jobs()` - Extracts job listings from HTML tables
+
+- `accept_first_job()` - Filters and auto-accepts jobs
+
+- `run_session_impl()` - Runs 10 check cycles per session
+
+ 
+
+**driver_manager.py** (Browser Management)
+
+- Creates headless Chrome with anti-detection measures
+
+- Manages driver lifecycle (create, verify, destroy)
+
+- Cleans up temp directories
+
+ 
+
+**notifications.py** (Push Notifications)
+
+- Sends messages via Pushover API with screenshot attachments
+
+- Supports separate admin and user notification lists
+
+- Graceful failure handling per recipient
+
+ 
+
+**timing.py** (Smart Scheduling)
+
+- Adjusts check frequency based on time of day (Pacific timezone)
+
+- Peak hours (5-9 AM, 6-9 PM): 5-25 minute intervals
+
+- Off-peak (12-6 PM): 2-8 minute intervals
+
+- Night (9 PM-5 AM): 90-270 minute intervals
+
+ 
+
+**error_handling.py** (Exception System)
+
+- `TemporaryError` - Retryable failures (network, timeouts)
+
+- `PermanentError` - Requires human intervention
+
+- `retry_on_failure()` - Automatic retry with exponential backoff
+
+ 
+
+## Key Features
+
+ 
+
+### Intelligent Job Filtering
+
+- **Same-day blocking**: Skip jobs scheduled for today (`BLOCK_SAME_DAY`)
+
+- **Date blacklist**: Exclude specific dates (`UNWANTED_DATES`)
+
+- **Classification filtering**: Skip unwanted job types (`UNWANTED_CLASSIFICATIONS`)
+
+ 
+
+### Anti-Detection Measures
+
+- Removes `navigator.webdriver` flag
+
+- Disables automation indicators
+
+- Randomized wait times to mimic human behavior
+
+ 
+
+### Robust Error Handling
+
+- Automatic retry on temporary failures (max 2 attempts)
+
+- Debug dumps (HTML + screenshots) on errors
+
+- Session recovery if browser crashes
+
+- Escalation to admin on permanent failures
+
+ 
+
+### Production-Ready
+
+- Headless browser operation for server deployment
+
+- Secure credential management via environment variables
+
+- Resource-efficient (custom temp directories)
+
+- Comprehensive logging and debugging
+
+ 
+
+## Technology Stack
+
+ 
+
+- **Python 3.x** - Core application
+
+- **Selenium** - Browser automation and form interaction
+
+- **BeautifulSoup4** - HTML parsing and data extraction
+
+- **Requests** - HTTP client for Pushover API
+
+- **python-dotenv** - Environment variable management
+
+- **pytz** - Timezone handling (Pacific Time)
+
+- **Chromium** - Headless browser engine
+
+ 
 
 ## Setup and Installation
 
-1. **Install Dependencies**
+ 
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Install Dependencies
 
-2. **Configure Environment**
+ 
 
-   ```
-   PORTAL_USERNAME=your_portal_username
-   PORTAL_PASSWORD=your_portal_password
-   PORTAL_URL=https://your-job-portal.com/login
-   PUSHOVER_API_TOKEN=your_pushover_api_token
-   ADMIN_USER_1=admin_user_key
-   PRODUCTION_USER_1=production_user_key
-   USERNAME_FIELD=userId
-   PASSWORD_FIELD=userPin
-   JOB_TABLE_ID=job-table-id
-   ```
+```bash
 
-3. **System Requirements**
-   - ChromeDriver for browser automation
-   - Chromium browser for headless operation
+pip install -r requirements.txt
 
-## Skills Demonstrated
+```
 
-- **Web Automation** - Complex browser interaction and form handling
-- **Data Processing** - HTML parsing, data extraction, and filtering algorithms
-- **API Integration** - RESTful service consumption and error handling
-- **Production Deployment** - Linux server configuration and service management
-- **Security Practices** - Secure credential management and environment isolation
-- **Problem Solving** - Automated solution for time-sensitive data monitoring
-- **Code Organization** - Modular design with separation of concerns
-(https://github.com/jen444x/jen444x.github.io)
+ 
+
+### 2. Install System Requirements
+
+ 
+
+**ChromeDriver** (must match your Chrome version):
+
+```bash
+
+# Example for Linux
+
+wget https://chromedriver.storage.googleapis.com/LATEST_RELEASE
+
+# Download appropriate version
+
+sudo mv chromedriver /usr/local/bin/
+
+sudo chmod +x /usr/local/bin/chromedriver
+
+```
+
+ 
+
+**Chromium Browser**:
+
+```bash
+
+# Ubuntu/Debian
+
+sudo apt-get install chromium-browser
+
+ 
+
+# CentOS/RHEL
+
+sudo yum install chromium
+
+```
+
+ 
+
+### 3. Configure Environment Variables
+
+ 
+
+Create a `.env` file in the project root:
+
+ 
+
+```bash
+
+# Portal credentials
+
+PORTAL_USERNAME=your_portal_username
+
+PORTAL_PASSWORD=your_portal_password
+
+PORTAL_URL=https://your-job-portal.com/login
+
+ 
+
+# UI element selectors (customize for your portal)
+
+USERNAME_FIELD=userId
+
+PASSWORD_FIELD=userPin
+
+JOB_TABLE_ID=parent-table-desktop-available
+
+ 
+
+# Pushover notification credentials
+
+PUSHOVER_API_TOKEN=your_pushover_api_token
+
+ADMIN_USER_1=your_admin_pushover_user_key
+
+PRODUCTION_USER_1=your_production_pushover_user_key
+
+```
+
+ 
+
+**Get Pushover credentials:**
+
+1. Sign up at [pushover.net](https://pushover.net/)
+
+2. Create an application to get your API token
+
+3. Find your user key in your account settings
+
+ 
+
+### 4. Customize Job Filters (Optional)
+
+ 
+
+Edit `check_jobs.py` lines 18-26:
+
+ 
+
+```python
+
+UNWANTED_DATES = [
+
+    "09/15/2025"  # Add dates to skip
+
+]
+
+ 
+
+BLOCK_SAME_DAY = True  # Block jobs starting today
+
+ 
+
+UNWANTED_CLASSIFICATIONS = [
+
+    "impaired"  # Add classifications to skip
+
+]
+
+```
+
+ 
+
+## Usage
+
+ 
+
+### Run Locally
+
+```bash
+
+python check_jobs.py
+
+```
+ 
+
+
+
+
+## How It Works
+
+ 
+
+### Execution Flow
+
+ 
+
+```
+
+1. Initialize WebDriver with headless Chrome
+
+2. Login to job portal with credentials
+
+3. Loop 10 times:
+
+   a. Navigate to "Available Jobs" tab
+
+   b. Parse job listings from HTML table
+
+   c. If jobs found:
+
+      - Send push notification with screenshot
+
+      - Filter jobs (dates, classifications)
+
+      - Accept first suitable job
+
+   d. Wait (time-aware interval)
+
+4. Destroy driver (clean slate)
+
+5. Repeat indefinitely
+
+```
+
+ 
+
+### Session Management
+
+- Each session runs 10 job checks
+
+- Driver is destroyed after each session to prevent memory leaks
+
+- Automatic session recovery if browser crashes
+
+- Login state verified before each check
+
+ 
+
+### Error Recovery
+
+- **Network timeouts**: Retry automatically (2 attempts)
+
+- **Login failures**: Retry with fresh driver
+
+- **Element not found**: Dump debug info and retry
+
+- **Too many failures**: Notify admin and stop
+
+ 
+
+## Project Structure
+
+ 
+
+```
+
+job-alert-automation/
+
+├── check_jobs.py           # Main controller (415 lines)
+
+├── driver_manager.py       # Browser management (71 lines)
+
+├── notifications.py        # Push notifications (58 lines)
+
+├── timing.py              # Smart scheduling (73 lines)
+
+├── error_handling.py      # Exception system (45 lines)
+
+├── requirements.txt       # Python dependencies
+
+├── .env                   # Credentials (not in git)
+
+├── .gitignore            # Git exclusions
+
+└── README.md             # This file
+
+```
